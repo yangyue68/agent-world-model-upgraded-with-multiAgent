@@ -26,6 +26,7 @@ def run(config):
     failures = list(input_failures)
     counts = Counter()
     success = 0
+    done = 0
     with InterruptibleThreadPoolExecutor(max_workers=config.max_concurrency) as pool:
         futures = {pool.submit(generate_environment, item, config): item for item in pending}
         for future in as_completed(futures):
@@ -45,7 +46,9 @@ def run(config):
                 logger.success(f"[通过] {item['scenario']}/{item['task_id']} fixes={result.get('fix_count', 0)}")
             write_jsonl(config.output, completed.values())
             write_jsonl(config.bad_output, failures)
-            done = success + sum(1 for row in failures if task_key(row) in {task_key(x) for x in pending})
+            # 每个 future 恰好对应一个 pending 任务，直接累加即可；
+            # 旧写法每次完成都对全部 failures×pending 重建集合，3011 个任务时是 O(n²)。
+            done += 1
             logger.info(f"[进度 {done}/{len(pending)}] 通过={success} 淘汰={done-success} 剩余={len(pending)-done}")
     logger.info(f"[完成] 通过={success} 淘汰={len(pending)-success} 原因={dict(counts)} 输出={config.output}")
     return {"success": success, "failed": len(pending)-success}

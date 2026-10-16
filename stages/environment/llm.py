@@ -56,9 +56,10 @@ class Agent:
             "messages": [{"role": "system", "content": self.system_prompt}, {"role": "user", "content": user_prompt}]}], progress_bar=False)[0]
         raw, finish, tokens = _content(response)
         logger.info(f"[{self.label}] {self.name} response_chars={len(raw)} tokens={tokens} finish={finish} elapsed={time.monotonic()-started:.1f}s")
-        self.raw_dir.mkdir(parents=True, exist_ok=True)
-        stamp = str(time.time_ns())
-        (self.raw_dir / f"{self.name}_{stamp}.txt").write_text(raw, encoding="utf-8")
+        if self.config.save_raw_responses:
+            self.raw_dir.mkdir(parents=True, exist_ok=True)
+            stamp = str(time.time_ns())
+            (self.raw_dir / f"{self.name}_{stamp}.txt").write_text(raw, encoding="utf-8")
         if finish not in (None, "stop"):
             raise ReplyError(f"{self.name}: finish_reason={finish}")
         return parser(raw)

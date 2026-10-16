@@ -124,7 +124,14 @@ def generate_environment(item, config):
             fixer_input = json.dumps({"input": json.loads(context), "current_main_py": code,
                                       "problems": summarize_problems(problems),
                                       "instruction": "Fix each distinct root cause shown by the final exception or validation message. Return a complete corrected main.py."}, ensure_ascii=False, default=str)
+            submitted = code
             code = normalize_code(request(agents["fixer"], fixer_input, extract_code, config.request_retry), item.get("api_spec"))
+            if code == submitted:
+                # fixer 在确定性采样下返回了与提交版完全相同的源码，说明该问题无法靠修复解决；
+                # 提前止损，避免像 task_5/task_6 那样把整个修复预算烧在逐字节重复的输出上。
+                return {**base, "stage": "environment_bug",
+                        "reason": "fixer returned unchanged code: " + "; ".join(map(str, summarize_problems(problems))),
+                        "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
     except ReplyError as exc:
         return {**base, "stage": "model_request", "reason": str(exc), "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
     except Exception as exc:

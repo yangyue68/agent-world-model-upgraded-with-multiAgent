@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 
 
 def read_jsonl(path):
@@ -18,11 +19,18 @@ def read_jsonl(path):
 
 
 def write_jsonl(path, records):
+    # 先写临时文件再原子替换，防止进程被中断时留下半截 JSONL。
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+    tmp = target.parent / f"{target.name}.tmp.{os.getpid()}"
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        os.replace(tmp, target)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def task_key(record):

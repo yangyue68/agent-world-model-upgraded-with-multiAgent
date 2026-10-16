@@ -19,20 +19,22 @@ class Config:
     model: str = "your-llm-model-name"
     probe_model: str = "your-llm-model-name"
     max_concurrency: int = 1
-    request_timeout: float = 1200.0
+    # 非流式请求里该超时≈整次生成时长上限；observed 约 130 tok/s，max_tokens=50000 合法生成就需 6-7 分钟。
+    # 1200s 挂起恢复太慢，180s 会误杀长生成，取 GPTClient 默认 600s。
+    request_timeout: float = 600.0
     runtime_timeout: float = 90.0
     request_retry: int = 1
-    max_fix_retry: int = 3
+    max_fix_retry: int = 4
     rollout_count: int = 1
     max_probe_retry: int = 1
     max_steps: int = 12
-    max_tokens: int = 24000
+    max_tokens: int = 50000
     probe_temperature: float = 0.0
     resume: bool = False
     limit: int | None = None
     allowed_scenarios: list[str] | None = field(default=None)
     verbose: bool = False
-    save_raw_responses: bool = True
+    save_raw_responses: bool = False
 
     def pre_process(self):
         self.model = os.environ.get("AWM_SYN_OVERRIDE_MODEL", self.model)

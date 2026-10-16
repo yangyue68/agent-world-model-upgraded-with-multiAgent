@@ -6,8 +6,17 @@ Build one self-contained Python file named main.py exporting a FastAPI `app`.
 `create_engine(DATABASE_PATH)`; never prefix it with `sqlite:///` or interpolate it into
 another URL.
 The database is already populated. Never create/drop/alter/seed/reset it, call
-create_all/drop_all, or write rows during import/startup. Use existing tables and
-parameterized SQL. Use only Python standard library, FastAPI, Pydantic and SQLAlchemy.
+create_all/drop_all, register startup/lifespan/on_event hooks that write rows, or modify
+any table during import/startup; the database must stay byte-identical until a request
+executes. Use existing tables and parameterized SQL. Use only Python standard library,
+FastAPI, Pydantic and SQLAlchemy.
+The shared runtime already executes `PRAGMA foreign_keys=ON` on every sqlite3 and
+SQLAlchemy connection. Do not add a connect/event hook for this, and its absence from the
+source is never a defect.
+The runtime injects the simulated logged-in actor as `os.environ["AWM_CURRENT_USER_ID"]`.
+When a write must record an actor column (created_by, author_user_id, reviewer_user_id,
+etc.), read that environment variable at request time; never hardcode a literal user id
+and never add an auth header/body field absent from the spec.
 Use the exact method, path, operation_id, parameter names and response semantics in the
 API specification. Do not add mandatory auth/body/header fields absent from the spec.
 Follow SQLite CHECK constraints exactly: enum values written to a table must be selected
@@ -64,7 +73,9 @@ Return only JSON:
 
 TRAJECTORY_REVIEWER = """You are TrajectoryReviewer. Decide whether an observed failure is an
 environment defect or merely an agent mistake. Actual 4xx responses and omitted work are
-not environment bugs. No business tool calls means inconclusive. Task completion belongs
+not environment bugs. A 5xx unhandled-exception traceback raised for a request that
+matches the exposed schema is an environment bug, even if a later probe with different
+arguments succeeds. No business tool calls means inconclusive. Task completion belongs
 to verifier. Return only JSON:
 {"verdict":"pass"|"agent_failure"|"environment_bug"|"upstream_conflict"|"inconclusive",
 "issues":["..."],"reason":"..."}

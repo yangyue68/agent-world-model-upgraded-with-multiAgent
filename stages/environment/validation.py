@@ -216,8 +216,11 @@ def _check_request_schema(expected, actual, path, document):
         actual_properties = actual.get("properties", {}) if isinstance(actual, dict) else {}
         actual_required = set(actual.get("required", [])) if isinstance(actual, dict) else set()
         for name in expected.get("required", []):
-            if name not in actual_properties or name not in actual_required:
+            # 分开报告"字段缺失"与"未声明 required"，让 fixer 能对症修而不是盲目重建字段。
+            if name not in actual_properties:
                 problems.append(f"{path}: required nested field {name} missing")
+            elif name not in actual_required:
+                problems.append(f"{path}: nested field {name} exists but must be declared required")
         for name, child in expected.get("properties", {}).items():
             if name in actual_properties:
                 problems.extend(_check_request_schema(child, actual_properties[name], f"{path}.{name}", document))
