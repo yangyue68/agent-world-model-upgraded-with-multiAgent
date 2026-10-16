@@ -1,0 +1,4 @@
+[
+  "DATABASE_PATH must be read from the runtime environment",
+  "generated code must not recreate or drop the upstream schema"
+]

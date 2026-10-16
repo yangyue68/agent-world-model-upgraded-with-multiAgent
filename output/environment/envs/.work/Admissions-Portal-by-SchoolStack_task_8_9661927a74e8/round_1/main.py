@@ -1,0 +1,315 @@
+import os
+import sqlite3
+from datetime import datetime
+from typing import Optional, Any
+from fastapi import FastAPI, HTTPException, Path, Body
+from pydantic import BaseModel
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+# Database setup
+DATABASE_PATH = os.environ.get("DATABASE_PATH")
+if not DATABASE_PATH:
+    raise ValueError("DATABASE_PATH environment variable must be set")
+
+# Remove the 'sqlite:///' prefix to get the file path
+DB_FILE_PATH = DATABASE_PATH.replace("sqlite:///", "")
+
+# Create SQLAlchemy engine
+engine = create_engine(DATABASE_PATH)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# FastAPI app
+app = FastAPI()
+
+# Models
+class ApplicationDetailsResponse(BaseModel):
+    id: int
+    application_number: str
+    applicant_id: int
+    intake_id: int
+    status: str
+    submitted_at: Optional[str] = None
+
+class WithdrawApplicationResponse(BaseModel):
+    success: bool
+    new_status: str
+    application_id: int
+
+class AddApplicationNoteResponse(BaseModel):
+    id: int
+    created_at: str
+
+class LogWithdrawalEmailResponse(BaseModel):
+    id: int
+    status: str
+
+class ApplicantDetailsResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+
+# Helper functions
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_current_user_id():
+    # In a real implementation, this would come from authentication context
+    return 1  # From runtime_context
+
+# Endpoints
+@app.get("/applications/{application_number}", response_model=ApplicationDetailsResponse, operation_id="get_application_details")
+def get_application_details(
+    application_number: str = Path(..., description="The unique application number (e.g., APP-3172)")
+):
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+                SELECT id, application_number, applicant_id, intake_id, status, submitted_at
+                FROM applications
+                WHERE application_number = :application_number
+            """),
+            {"application_number": application_number}
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        return ApplicationDetailsResponse(
+            id=row[0],
+            application_number=row[1],
+            applicant_id=row[2],
+            intake_id=row[3],
+            status=row[4],
+            submitted_at=row[5]
+        )
+
+@app.patch("/applications/{application_number}/withdraw", response_model=WithdrawApplicationResponse, operation_id="withdraw_application")
+def withdraw_application(
+    application_number: str = Path(..., description="The unique application number to withdraw"),
+    note_text: Optional[str] = Body(None, description="Optional internal note to add to the application upon withdrawal"),
+    reason: Optional[str] = Body(None, description="Reason for withdrawal recorded in history")
+):
+    current_user_id = get_current_user_id()
+    
+    with engine.begin() as conn:
+        # Get application details
+        result = conn.execute(
+            text("""
+                SELECT id, applicant_id, intake_id, status
+                FROM applications
+                WHERE application_number = :application_number
+            """),
+            {"application_number": application_number}
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        application_id, applicant_id, intake_id, old_status = row
+        
+        # Check if application can be withdrawn (not already withdrawn)
+        if old_status == "Withdrawn":
+            raise HTTPException(status_code=400, detail="Application is already withdrawn")
+        
+        # Update application status
+        conn.execute(
+            text("""
+                UPDATE applications
+                SET status = 'Withdrawn', updated_at = CURRENT_TIMESTAMP
+                WHERE id = :application_id
+            """),
+            {"application_id": application_id}
+        )
+        
+        # Record status change in history
+        conn.execute(
+            text("""
+                INSERT INTO application_status_history 
+                (application_id, previous_status, new_status, changed_by_user_id, changed_at, reason)
+                VALUES (:application_id, :old_status, 'Withdrawn', :user_id, CURRENT_TIMESTAMP, :reason)
+            """),
+            {
+                "application_id": application_id,
+                "old_status": old_status,
+                "user_id": current_user_id,
+                "reason": reason or ""
+            }
+        )
+        
+        # Add note if provided
+        if note_text:
+            conn.execute(
+                text("""
+                    INSERT INTO application_notes 
+                    (application_id, author_user_id, note, is_internal, created_at, updated_at)
+                    VALUES (:application_id, :user_id, :note_text, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """),
+                {
+                    "application_id": application_id,
+                    "user_id": current_user_id,
+                    "note_text": note_text
+                }
+            )
+        
+        return WithdrawApplicationResponse(
+            success=True,
+            new_status="Withdrawn",
+            application_id=application_id
+        )
+
+@app.post("/applications/{application_number}/notes", response_model=AddApplicationNoteResponse, operation_id="add_application_note")
+def add_application_note(
+    application_number: str = Path(..., description="The unique application number"),
+    note: str = Body(..., description="The content of the note"),
+    is_internal: bool = Body(True, description="Whether the note is internal only")
+):
+    current_user_id = get_current_user_id()
+    
+    with engine.begin() as conn:
+        # Get application ID
+        result = conn.execute(
+            text("""
+                SELECT id FROM applications WHERE application_number = :application_number
+            """),
+            {"application_number": application_number}
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        application_id = row[0]
+        
+        # Insert note
+        result = conn.execute(
+            text("""
+                INSERT INTO application_notes 
+                (application_id, author_user_id, note, is_internal, created_at, updated_at)
+                VALUES (:application_id, :user_id, :note, :is_internal, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id, created_at
+            """),
+            {
+                "application_id": application_id,
+                "user_id": current_user_id,
+                "note": note,
+                "is_internal": 1 if is_internal else 0
+            }
+        )
+        note_row = result.fetchone()
+        
+        return AddApplicationNoteResponse(
+            id=note_row[0],
+            created_at=note_row[1]
+        )
+
+@app.post("/applications/{application_number}/emails/log", response_model=LogWithdrawalEmailResponse, operation_id="log_withdrawal_email")
+def log_withdrawal_email(
+    application_number: str = Path(..., description="The unique application number"),
+    recipient_email: str = Body(..., description="Email address of the recipient"),
+    subject: str = Body(..., description="Subject of the email"),
+    body: Optional[str] = Body(None, description="Body content of the email"),
+    template_name: Optional[str] = Body(None, description="Name of the template used")
+):
+    current_user_id = get_current_user_id()
+    
+    with engine.begin() as conn:
+        # Get application ID
+        result = conn.execute(
+            text("""
+                SELECT id FROM applications WHERE application_number = :application_number
+            """),
+            {"application_number": application_number}
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        application_id = row[0]
+        
+        # Insert email log
+        result = conn.execute(
+            text("""
+                INSERT INTO email_log 
+                (application_id, recipient_email, subject, body, template_name, sent_by_user_id, sent_at, status, created_at)
+                VALUES (:application_id, :recipient_email, :subject, :body, :template_name, :user_id, CURRENT_TIMESTAMP, 'Sent', CURRENT_TIMESTAMP)
+                RETURNING id, status
+            """),
+            {
+                "application_id": application_id,
+                "recipient_email": recipient_email,
+                "subject": subject,
+                "body": body,
+                "template_name": template_name,
+                "user_id": current_user_id
+            }
+        )
+        email_row = result.fetchone()
+        
+        return LogWithdrawalEmailResponse(
+            id=email_row[0],
+            status=email_row[1]
+        )
+
+@app.get("/applicants/{applicant_id}", response_model=ApplicantDetailsResponse, operation_id="get_applicant_details")
+def get_applicant_details(
+    applicant_id: int = Path(..., description="The ID of the applicant")
+):
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+                SELECT id, first_name, last_name, email
+                FROM applicants
+                WHERE id = :applicant_id
+            """),
+            {"applicant_id": applicant_id}
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Applicant not found")
+        
+        return ApplicantDetailsResponse(
+            id=row[0],
+            first_name=row[1],
+            last_name=row[2],
+            email=row[3]
+        )
+
+# Task-specific endpoint to perform the complete withdrawal workflow
+@app.post("/tasks/withdraw_applicant_application", response_model=WithdrawApplicationResponse)
+def task_withdraw_applicant_application():
+    """
+    Withdraw applicant Daniel Ortega's application (APP-3172) from the Fall 2025 MBA intake.
+    Changes status to Withdrawn, adds internal note, and logs email.
+    """
+    application_number = "APP-3172"
+    note_text = "Applicant requested withdrawal via email on 2025-03-12"
+    email_subject = "Application Withdrawal Confirmation - APP-3172"
+    
+    # First get the application details to verify it exists
+    app_details = get_application_details(application_number)
+    
+    # Withdraw the application
+    withdraw_result = withdraw_application(
+        application_number=application_number,
+        note_text=note_text,
+        reason="Applicant requested withdrawal"
+    )
+    
+    # Get applicant details for email
+    applicant_details = get_applicant_details(applicant_id=app_details.applicant_id)
+    
+    # Log the email
+    log_withdrawal_email(
+        application_number=application_number,
+        recipient_email=applicant_details.email,
+        subject=email_subject,
+        body=f"Dear {applicant_details.first_name},\n\nYour application {application_number} has been successfully withdrawn.",
+        template_name="withdrawal_confirmation"
+    )
+    
+    return withdraw_result

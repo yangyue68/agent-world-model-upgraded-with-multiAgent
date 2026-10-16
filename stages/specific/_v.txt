@@ -1,0 +1,8 @@
+'                    errors.append(f"{prefix}: method/path 重复")'
+'                for field in ("summary", "description"):'
+'                    if not isinstance(ep.get(field), str) or not ep[field].strip():'
+'                        errors.append(f"{prefix}: 缺少 {field}")'
+'                if ep.get("user_scope") not in ("all", "current_user"):'
+'                    errors.append(f"{prefix}: user_scope 必须为 all/current_user")'
+'                if ep.get("example_policy", "illustrative") != "illustrative":'
+'                    errors.append(f"{prefix}: example_policy 只能为 illustrative")'

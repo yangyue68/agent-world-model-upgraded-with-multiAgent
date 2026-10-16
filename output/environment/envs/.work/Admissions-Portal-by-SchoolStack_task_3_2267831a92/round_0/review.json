@@ -1,0 +1,8 @@
+{
+  "verdict": "environment_bug",
+  "issues": [
+    "Incorrect join condition in the main query: The join between User and subquery uses User.id == subquery.c.reviewer_id, but the subquery's reviewer_id column is not properly aliased or referenced, potentially causing incorrect data grouping or missing results.",
+    "Missing proper filtering for the specific program and term in the subquery: The subquery should explicitly filter by both program_name and term_name using the correct foreign key relationships to ensure only relevant applications are considered.",
+    "Inconsistent use of column references in GROUP BY clause: The GROUP BY includes ReviewCommittee.name but does not include ReviewCommittee.id, which may lead to incorrect aggregation when multiple committees have the same name."
+  ]
+}

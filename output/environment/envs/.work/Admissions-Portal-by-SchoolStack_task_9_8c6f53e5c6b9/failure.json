@@ -1,0 +1,8 @@
+{
+  "scenario": "Admissions Portal by SchoolStack",
+  "task_id": "task_9",
+  "task": "Merge duplicate applicant records for Sophia Nguyen with IDs APP-4421 (primary) and APP-7789 (duplicate) in the Fall 2025 Data Science program: keep APP-4421 as the primary record, move all uploaded documents, test scores, recommendation requests, and submission responses from APP-7789 to APP-4421, resolve conflicting date-of-birth values by keeping the one from APP-4421, then delete APP-7789 and log the merge with reviewer identity and timestamp.",
+  "stage": "model_request",
+  "reason": "ReplyError: 响应非正常结束：finish_reason=content_filter",
+  "diagnostics_dir": "output/environment/envs/.work/Admissions-Portal-by-SchoolStack_task_9_8c6f53e5c6b9"
+}

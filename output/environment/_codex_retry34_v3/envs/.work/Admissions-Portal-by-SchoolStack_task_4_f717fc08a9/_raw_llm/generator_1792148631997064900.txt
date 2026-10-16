@@ -1,0 +1,187 @@
+```python
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, CheckConstraint, func
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from datetime import datetime
+import os
+
+# Database setup
+DATABASE_PATH = "sqlite:///admissions_portal.db"
+engine = create_engine(DATABASE_PATH)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Models
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    full_name = Column(String)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+class ApplicationForm(Base):
+    __tablename__ = "application_forms"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    application_fee_cents = Column(Integer, nullable=False, default=0)
+    deadline = Column(DateTime)
+    status = Column(String, nullable=False, default="draft")
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("application_fee_cents >= 0"),
+        CheckConstraint("status IN ('draft','published','closed')"),
+    )
+
+class FormSection(Base):
+    __tablename__ = "form_sections"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("application_forms.id"), nullable=False)
+    title = Column(String, nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+class Field(Base):
+    __tablename__ = "form_fields"
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("form_sections.id"), nullable=False)
+    label = Column(String, nullable=False)
+    field_type = Column(String, nullable=False)
+    is_required = Column(Integer, nullable=False, default=0)
+    position = Column(Integer, nullable=False, default=0)
+    placeholder = Column(String)
+    help_text = Column(String)
+    validation_rules = Column(Text)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("field_type IN ('text','email','date','number','textarea','file','recommendation_request')"),
+        CheckConstraint("is_required IN (0,1)"),
+    )
+
+class FormRequirement(Base):
+    __tablename__ = "form_requirements"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("application_forms.id"), nullable=False)
+    requirement_type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text)
+    is_required = Column(Integer, nullable=False, default=1)
+    allowed_file_types = Column(String)
+    max_file_size_bytes = Column(Integer)
+    recommendation_count = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("requirement_type IN ('document_upload','recommendation_request')"),
+        CheckConstraint("is_required IN (0,1)"),
+        CheckConstraint("recommendation_count >= 0"),
+        CheckConstraint("(max_file_size_bytes IS NULL OR max_file_size_bytes > 0)"),
+    )
+
+# Pydantic models
+class CreateApplicationFormRequest(BaseModel):
+    name: str
+    description: str | None = None
+    application_fee_cents: int
+    deadline: str | None = None
+    sections: list[dict]
+    requirements: list[dict] | None = None
+
+class CreateApplicationFormResponse(BaseModel):
+    id: int
+    name: str
+    status: str
+    created_at: str
+
+# FastAPI app
+app = FastAPI()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.post("/application-forms", response_model=CreateApplicationFormResponse, operation_id="create_application_form")
+def create_application_form(request: CreateApplicationFormRequest):
+    db = next(get_db())
+    
+    # Create the form
+    form = ApplicationForm(
+        name=request.name,
+        description=request.description,
+        created_by=1,  # Default user ID
+        application_fee_cents=request.application_fee_cents,
+        deadline=request.deadline,
+        status="draft"
+    )
+    db.add(form)
+    db.commit()
+    db.refresh(form)
+    
+    # Create sections
+    for section_data in request.sections:
+        section = FormSection(
+            form_id=form.id,
+            title=section_data["title"],
+            position=section_data.get("position", 0)
+        )
+        db.add(section)
+        db.commit()
+        db.refresh(section)
+        
+        # Create fields for the section
+        for field_data in section_data.get("fields", []):
+            field = Field(
+                section_id=section.id,
+                label=field_data["label"],
+                field_type=field_data["field_type"],
+                is_required=int(field_data.get("is_required", False)),
+                position=field_data.get("position", 0),
+                placeholder=field_data.get("placeholder"),
+                help_text=field_data.get("help_text")
+            )
+            db.add(field)
+    
+    # Create requirements
+    if request.requirements:
+        for req_data in request.requirements:
+            requirement = FormRequirement(
+                form_id=form.id,
+                requirement_type=req_data["requirement_type"],
+                title=req_data["title"],
+                description=req_data.get("description"),
+                is_required=int(req_data.get("is_required", True)),
+                allowed_file_types=req_data.get("allowed_file_types"),
+                max_file_size_bytes=req_data.get("max_file_size_bytes"),
+                recommendation_count=req_data.get("recommendation_count", 1)
+            )
+            db.add(requirement)
+    
+    db.commit()
+    
+    return CreateApplicationFormResponse(
+        id=form.id,
+        name=form.name,
+        status=form.status,
+        created_at=form.created_at.isoformat()
+    )
+
+# Initialize database
+Base.metadata.create_all(bind=engine)
+```

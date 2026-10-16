@@ -1,0 +1,8 @@
+{
+  "scenario": "Admissions Portal by SchoolStack",
+  "task_id": "task_6",
+  "task": "Configure a multi-stage recommendation and deadline workflow for the 'MD Program 2026' application in SchoolStack: require three recommendation requests (two from science faculty and one from a clinical supervisor), set the recommendation submission deadline to December 15, 2025, enable automated reminder emails every 7 days for incomplete recommendations beginning December 1, 2025, and create a deadline rule that automatically moves any application still missing required items to 'Waitlist Review' after the final application deadline of January 10, 2026.",
+  "stage": "environment_bug",
+  "reason": "修复预算耗尽：第 281 行不能重建/删除上游表结构",
+  "diagnostics_dir": "output/environment/envs/.work/Admissions-Portal-by-SchoolStack_task_6_6b8b24025d47"
+}

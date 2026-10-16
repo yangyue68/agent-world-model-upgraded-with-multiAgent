@@ -1,0 +1,98 @@
+```python
+import os
+from datetime import date, timedelta
+from typing import List, Optional
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, Query
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, func, case, and_
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+# Database setup
+DATABASE_PATH = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+engine = create_engine(DATABASE_PATH)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Models
+class Animal(Base):
+    __tablename__ = "animals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    species = Column(String, nullable=False)
+    breed = Column(String)
+    birth_date = Column(Date)
+    age_years = Column(Integer)
+    temperament = Column(String)
+    status = Column(String, nullable=False)
+    microchip_id = Column(String, unique=True)
+    intake_date = Column(Date, nullable=False)
+    current_location = Column(String)
+    created_at = Column(DateTime, default=func.current_timestamp())
+    updated_at = Column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+# Pydantic models
+class AnimalResponse(BaseModel):
+    id: int
+    name: str
+    breed: Optional[str]
+    age_years: Optional[int]
+    status: str
+    microchip_id: Optional[str]
+    intake_date: date
+    current_location: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+# FastAPI app
+app = FastAPI()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/animals/search", response_model=List[AnimalResponse], operation_id="search_animals_advanced")
+def search_animals_advanced(
+    species: Optional[str] = Query(None),
+    statuses: Optional[List[str]] = Query(None),
+    min_age_years: Optional[int] = Query(None),
+    temperaments: Optional[List[str]] = Query(None),
+    intake_date_before: Optional[date] = Query(None),
+):
+    db = next(get_db())
+    
+    # Build query
+    query = db.query(Animal)
+    
+    # Filter by species if provided
+    if species:
+        query = query.filter(Animal.species == species)
+    
+    # Filter by statuses if provided
+    if statuses:
+        query = query.filter(Animal.status.in_(statuses))
+    
+    # Filter by minimum age if provided
+    if min_age_years is not None:
+        query = query.filter(Animal.age_years >= min_age_years)
+    
+    # Filter by temperaments if provided
+    if temperaments:
+        query = query.filter(Animal.temperament.in_(temperaments))
+    
+    # Filter by intake date before if provided
+    if intake_date_before:
+        query = query.filter(Animal.intake_date < intake_date_before)
+    
+    # Execute query
+    results = query.all()
+    
+    return results
+```

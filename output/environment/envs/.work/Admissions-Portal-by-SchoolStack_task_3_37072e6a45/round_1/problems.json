@@ -1,0 +1,5 @@
+[
+  "The query incorrectly filters applications by program_term_id using a subquery that may not correctly resolve to the intended program_term_id. The join condition between Application and ProgramTerm should be direct but is being filtered through an unnecessary scalar_subquery.",
+  "The query does not properly handle cases where there are no applications assigned to a reviewer in a particular stage, which could lead to division by zero when calculating decision_percentage.",
+  "The grouping in the query includes ReviewCommittee.name but does not ensure that all columns in the SELECT clause are functionally dependent on the GROUP BY keys, potentially causing incorrect aggregation results."
+]

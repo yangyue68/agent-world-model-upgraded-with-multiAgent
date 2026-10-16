@@ -1,0 +1,5 @@
+[
+  "create_application_form.sections[]: required nested field title missing",
+  "create_application_form.requirements[]: required nested field requirement_type missing",
+  "create_application_form.requirements[]: required nested field title missing"
+]

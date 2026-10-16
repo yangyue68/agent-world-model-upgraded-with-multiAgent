@@ -1,0 +1,12 @@
+{
+  "generated": 10,
+  "rule_rejected": 0,
+  "classification_rejected": 0,
+  "duplicate_rejected": 2,
+  "review_rejected": 0,
+  "review_failures": 0,
+  "regenerated": 0,
+  "original_scenarios": 266,
+  "generated_passed_scenarios": 8,
+  "total_scenarios": 274
+}

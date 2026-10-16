@@ -1,0 +1,5 @@
+[
+  "Incorrect join condition in the main query: The join between User and subquery uses User.id == subquery.c.reviewer_id, but the subquery's reviewer_id column is not properly aliased or referenced, potentially causing incorrect data grouping or filtering.",
+  "Missing proper handling of cases where no applications are assigned to a reviewer: The current implementation does not account for reviewers who may be assigned to stages but have no applications, which could lead to incomplete results.",
+  "Inconsistent use of column references in the GROUP BY clause: The GROUP BY includes ReviewCommittee.id but not ReviewCommittee.name, which might cause issues if the database enforces strict group by rules."
+]

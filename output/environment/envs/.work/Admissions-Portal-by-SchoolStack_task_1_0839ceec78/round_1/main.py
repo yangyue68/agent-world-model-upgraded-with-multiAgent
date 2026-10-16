@@ -1,0 +1,121 @@
+import os
+from typing import List
+from fastapi import FastAPI, Query
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, Text, CheckConstraint, func
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+
+DATABASE_PATH = os.environ.get("DATABASE_PATH")
+if not DATABASE_PATH:
+    raise ValueError("DATABASE_PATH environment variable is not set")
+
+engine = create_engine(DATABASE_PATH)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime, default=func.current_timestamp())
+    updated_at = Column(DateTime, default=func.current_timestamp())
+
+class Camp(Base):
+    __tablename__ = "camps"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    term = Column(String, nullable=False)
+    year = Column(Integer, nullable=False)
+    start_date = Column(Date)
+    end_date = Column(Date)
+    created_at = Column(DateTime, default=func.current_timestamp())
+    updated_at = Column(DateTime, default=func.current_timestamp())
+    
+    __table_args__ = (
+        CheckConstraint("name IS NOT NULL", name="ck_camp_name_not_null"),
+        CheckConstraint("term IS NOT NULL", name="ck_camp_term_not_null"),
+        CheckConstraint("year IS NOT NULL", name="ck_camp_year_not_null"),
+        CheckConstraint("name || '_' || term || '_' || year IS NOT NULL", name="unique_camp_term_year"),
+    )
+
+class Applicant(Base):
+    __tablename__ = "applicants"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    camp_id = Column(Integer, ForeignKey("camps.id"), nullable=False)
+    application_status = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.current_timestamp())
+    updated_at = Column(DateTime, default=func.current_timestamp())
+    
+    user = relationship("User")
+    camp = relationship("Camp")
+    
+    __table_args__ = (
+        CheckConstraint("application_status IN ('Incomplete', 'Complete', 'Submitted', 'Under Review', 'Accepted', 'Rejected', 'Waitlisted')", name="ck_applicant_status_valid"),
+        CheckConstraint("user_id IS NOT NULL", name="ck_applicant_user_id_not_null"),
+        CheckConstraint("camp_id IS NOT NULL", name="ck_applicant_camp_id_not_null"),
+        CheckConstraint("user_id || '_' || camp_id IS NOT NULL", name="unique_applicant_user_camp"),
+    )
+
+class Document(Base):
+    __tablename__ = "documents"
+    
+    id = Column(Integer, primary_key=True)
+    applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=False)
+    document_type = Column(String, nullable=False)
+    file_path = Column(Text, nullable=False)
+    uploaded_at = Column(DateTime, default=func.current_timestamp())
+    created_at = Column(DateTime, default=func.current_timestamp())
+    updated_at = Column(DateTime, default=func.current_timestamp())
+    
+    applicant = relationship("Applicant")
+    
+    __table_args__ = (
+        CheckConstraint("document_type IN ('Recommendation Letter', 'Transcript', 'Essay', 'Resume', 'Other')", name="ck_document_type_valid"),
+        CheckConstraint("applicant_id IS NOT NULL", name="ck_document_applicant_id_not_null"),
+        CheckConstraint("document_type IS NOT NULL", name="ck_document_type_not_null"),
+        CheckConstraint("file_path IS NOT NULL", name="ck_document_file_path_not_null"),
+    )
+
+app = FastAPI()
+
+class ApplicantResult(BaseModel):
+    full_name: str
+    email: str
+
+@app.get("/applicants/search", response_model=List[ApplicantResult], operation_id="search_applicants_by_criteria")
+def search_applicants_by_criteria(
+    camp_name: str = Query(..., description="The name of the camp (e.g., 'Robotics Camp')."),
+    term: str = Query(..., description="The term of the camp (e.g., 'Summer')."),
+    year: int = Query(..., description="The year of the camp (e.g., 2025)."),
+    application_status: str = Query(None, description="Filter by application status (e.g., 'Incomplete'). If omitted, no status filter is applied."),
+    missing_document_type: str = Query(None, description="Filter for applicants who do NOT have this specific document type uploaded (e.g., 'Recommendation Letter'). If omitted, no missing document filter is applied.")
+):
+    db = SessionLocal()
+    try:
+        query = db.query(User.full_name, User.email)\
+            .join(Applicant, User.id == Applicant.user_id)\
+            .join(Camp, Applicant.camp_id == Camp.id)\
+            .filter(Camp.name == camp_name)\
+            .filter(Camp.term == term)\
+            .filter(Camp.year == year)
+        
+        if application_status:
+            query = query.filter(Applicant.application_status == application_status)
+            
+        if missing_document_type:
+            subquery = db.query(Document.applicant_id)\
+                .filter(Document.document_type == missing_document_type)\
+                .subquery()
+            query = query.outerjoin(subquery, Applicant.id == subquery.c.applicant_id)\
+                .filter(subquery.c.applicant_id.is_(None))
+                
+        results = query.all()
+        return [{"full_name": row[0], "email": row[1]} for row in results]
+    finally:
+        db.close()

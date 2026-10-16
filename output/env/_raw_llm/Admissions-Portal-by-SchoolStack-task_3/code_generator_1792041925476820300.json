@@ -1,0 +1,9 @@
+{
+  "agent": "code_generator",
+  "label": "Admissions Portal by SchoolStack/task_3",
+  "model": "Qwen3-Coder-30B-A3B-Instruct",
+  "max_tokens": 50000,
+  "chars": 7907,
+  "completion_tokens": 1864,
+  "finish_reason": "stop"
+}

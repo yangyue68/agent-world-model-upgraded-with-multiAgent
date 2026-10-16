@@ -1,0 +1,2 @@
+Error during initialization: (sqlite3.OperationalError) unable to open database file
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

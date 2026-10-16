@@ -1,0 +1,5 @@
+[
+  "第 381 行不能重建/删除上游表结构",
+  "line 381: cannot rebuild or delete upstream schema",
+  "line 379: startup handler writes to the database"
+]

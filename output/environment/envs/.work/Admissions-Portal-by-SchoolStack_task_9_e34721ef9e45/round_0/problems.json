@@ -1,0 +1,5 @@
+[
+  "/applicants/lookup: operationId 应为 lookup_applicants_by_name_and_program",
+  "/applicants/{primary_id}/merge/{duplicate_id}: operationId 应为 merge_duplicate_applicants",
+  "merge_duplicate_applicants: 缺少 body 参数 reviewer_user_id"
+]

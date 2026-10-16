@@ -1,0 +1,9 @@
+[
+  "/forms: operationId 应为 find_forms_by_name",
+  "/forms/{form_id}/sections: operationId 应为 create_form_section",
+  "/sections/{section_id}/fields: operationId 应为 create_section_field",
+  "/forms/{form_id}/questions: operationId 应为 get_form_questions",
+  "/forms/{form_id}/documents: operationId 应为 create_form_document",
+  "/forms/{form_id}/deadlines: operationId 应为 get_form_deadlines",
+  "/deadlines/{deadline_id}: operationId 应为 update_form_deadline"
+]

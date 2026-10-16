@@ -1,0 +1,467 @@
+import os
+import sqlite3
+from datetime import date
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException, Path, Query, Depends
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, Date, Boolean, Text, ForeignKey, CheckConstraint, UniqueConstraint
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+
+# Database setup
+DATABASE_URL = os.getenv("DATABASE_PATH")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_PATH environment variable is not set")
+
+engine = create_engine(DATABASE_URL)
+Base = declarative_base()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Models
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False)
+    full_name = Column(String)
+    email = Column(String, unique=True)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class Form(Base):
+    __tablename__ = "forms"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class FormSection(Base):
+    __tablename__ = "form_sections"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("forms.id"))
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    is_optional = Column(Boolean, default=False)
+    max_entries = Column(Integer)
+    display_order = Column(Integer, default=0)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class SectionField(Base):
+    __tablename__ = "section_fields"
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("form_sections.id"))
+    field_name = Column(String, nullable=False)
+    field_label = Column(String, nullable=False)
+    field_type = Column(String, CheckConstraint("field_type IN ('text','textarea','number','date','select','checkbox','radio')"))
+    is_required = Column(Boolean, default=False)
+    display_order = Column(Integer, default=0)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class FormQuestion(Base):
+    __tablename__ = "form_questions"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("forms.id"))
+    question_text = Column(Text, nullable=False)
+    question_type = Column(String, CheckConstraint("question_type IN ('text','textarea','number','date','select','checkbox','radio')"))
+    is_required = Column(Boolean, default=False)
+    display_order = Column(Integer, default=0)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class FormDocument(Base):
+    __tablename__ = "form_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("forms.id"))
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    is_required = Column(Boolean, default=False)
+    condition_question_id = Column(Integer, ForeignKey("form_questions.id"))
+    condition_value = Column(String)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class FormDeadline(Base):
+    __tablename__ = "form_deadlines"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("forms.id"))
+    deadline_type = Column(String, CheckConstraint("deadline_type IN ('early_action','regular_decision','priority','final')"))
+    deadline_date = Column(Date)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class Application(Base):
+    __tablename__ = "applications"
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey("forms.id"))
+    applicant_id = Column(Integer, ForeignKey("users.id"))
+    status = Column(String, default="draft")
+    submitted_at = Column(Date)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class ApplicationAnswer(Base):
+    __tablename__ = "application_answers"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"))
+    question_id = Column(Integer, ForeignKey("form_questions.id"))
+    answer_value = Column(Text)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class ApplicationSectionEntry(Base):
+    __tablename__ = "application_section_entries"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"))
+    section_id = Column(Integer, ForeignKey("form_sections.id"))
+    entry_index = Column(Integer, CheckConstraint("entry_index >= 1 AND entry_index <= 5"))
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class ApplicationSectionEntryValue(Base):
+    __tablename__ = "application_section_entry_values"
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("application_section_entries.id"))
+    field_id = Column(Integer, ForeignKey("section_fields.id"))
+    value = Column(Text)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+class ApplicationDocument(Base):
+    __tablename__ = "application_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"))
+    document_id = Column(Integer, ForeignKey("form_documents.id"))
+    file_path = Column(Text, nullable=False)
+    uploaded_at = Column(Date)
+    created_at = Column(Date)
+    updated_at = Column(Date)
+
+# Request models
+class CreateFormSectionRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_optional: bool
+    max_entries: Optional[int] = None
+    display_order: Optional[int] = None
+
+class CreateSectionFieldRequest(BaseModel):
+    field_name: str
+    field_label: str
+    field_type: str
+    is_required: bool
+    display_order: Optional[int] = None
+
+class CreateFormDocumentRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_required: bool
+    condition_question_id: Optional[int] = None
+    condition_value: Optional[str] = None
+
+class UpdateFormDeadlineRequest(BaseModel):
+    deadline_date: date
+
+# Response models
+class FormResponse(BaseModel):
+    id: int
+    name: str
+
+class FormSectionResponse(BaseModel):
+    id: int
+    form_id: int
+    name: str
+    is_optional: bool
+    max_entries: Optional[int]
+
+class SectionFieldResponse(BaseModel):
+    id: int
+    section_id: int
+    field_name: str
+    field_label: str
+    field_type: str
+    is_required: bool
+
+class FormQuestionResponse(BaseModel):
+    id: int
+    question_text: str
+    question_type: str
+    is_required: bool
+
+class FormDocumentResponse(BaseModel):
+    id: int
+    form_id: int
+    name: str
+    is_required: bool
+    condition_question_id: Optional[int]
+    condition_value: Optional[str]
+
+class FormDeadlineResponse(BaseModel):
+    id: int
+    form_id: int
+    deadline_type: str
+    deadline_date: date
+
+# FastAPI app
+app = FastAPI()
+
+# Helper functions
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_form_by_name(db, name: str):
+    return db.query(Form).filter(Form.name == name).first()
+
+def get_form_deadlines(db, form_id: int):
+    return db.query(FormDeadline).filter(FormDeadline.form_id == form_id).all()
+
+def get_form_questions(db, form_id: int):
+    return db.query(FormQuestion).filter(FormQuestion.form_id == form_id).all()
+
+def get_form_section(db, form_id: int, section_name: str):
+    return db.query(FormSection).filter(FormSection.form_id == form_id, FormSection.name == section_name).first()
+
+def get_section_fields(db, section_id: int):
+    return db.query(SectionField).filter(SectionField.section_id == section_id).all()
+
+def get_form_document(db, form_id: int, document_name: str):
+    return db.query(FormDocument).filter(FormDocument.form_id == form_id, FormDocument.name == document_name).first()
+
+def get_form_deadline(db, form_id: int, deadline_type: str):
+    return db.query(FormDeadline).filter(FormDeadline.form_id == form_id, FormDeadline.deadline_type == deadline_type).first()
+
+# Endpoints
+@app.get("/forms", response_model=List[FormResponse])
+def find_forms_by_name(name: str = Query(...), db = Depends(get_db)):
+    forms = db.query(Form).filter(Form.name.like(f"%{name}%")).all()
+    return [{"id": f.id, "name": f.name} for f in forms]
+
+@app.post("/forms/{form_id}/sections", response_model=FormSectionResponse)
+def create_form_section(form_id: int, section_data: CreateFormSectionRequest, db = Depends(get_db)):
+    form = db.query(Form).filter(Form.id == form_id).first()
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+    
+    section = FormSection(
+        form_id=form_id,
+        name=section_data.name,
+        description=section_data.description,
+        is_optional=section_data.is_optional,
+        max_entries=section_data.max_entries,
+        display_order=section_data.display_order or 0,
+        created_at=date.today(),
+        updated_at=date.today()
+    )
+    
+    db.add(section)
+    db.commit()
+    db.refresh(section)
+    
+    return {
+        "id": section.id,
+        "form_id": section.form_id,
+        "name": section.name,
+        "is_optional": section.is_optional,
+        "max_entries": section.max_entries
+    }
+
+@app.post("/sections/{section_id}/fields", response_model=SectionFieldResponse)
+def create_section_field(section_id: int, field_data: CreateSectionFieldRequest, db = Depends(get_db)):
+    section = db.query(FormSection).filter(FormSection.id == section_id).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+    
+    field = SectionField(
+        section_id=section_id,
+        field_name=field_data.field_name,
+        field_label=field_data.field_label,
+        field_type=field_data.field_type,
+        is_required=field_data.is_required,
+        display_order=field_data.display_order or 0,
+        created_at=date.today(),
+        updated_at=date.today()
+    )
+    
+    db.add(field)
+    db.commit()
+    db.refresh(field)
+    
+    return {
+        "id": field.id,
+        "section_id": field.section_id,
+        "field_name": field.field_name,
+        "field_label": field.field_label,
+        "field_type": field.field_type,
+        "is_required": field.is_required
+    }
+
+@app.get("/forms/{form_id}/questions", response_model=List[FormQuestionResponse])
+def get_form_questions_endpoint(form_id: int, db = Depends(get_db)):
+    questions = db.query(FormQuestion).filter(FormQuestion.form_id == form_id).all()
+    return [
+        {
+            "id": q.id,
+            "question_text": q.question_text,
+            "question_type": q.question_type,
+            "is_required": q.is_required
+        } for q in questions
+    ]
+
+@app.post("/forms/{form_id}/documents", response_model=FormDocumentResponse)
+def create_form_document(form_id: int, document_data: CreateFormDocumentRequest, db = Depends(get_db)):
+    form = db.query(Form).filter(Form.id == form_id).first()
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+    
+    document = FormDocument(
+        form_id=form_id,
+        name=document_data.name,
+        description=document_data.description,
+        is_required=document_data.is_required,
+        condition_question_id=document_data.condition_question_id,
+        condition_value=document_data.condition_value,
+        created_at=date.today(),
+        updated_at=date.today()
+    )
+    
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    
+    return {
+        "id": document.id,
+        "form_id": document.form_id,
+        "name": document.name,
+        "is_required": document.is_required,
+        "condition_question_id": document.condition_question_id,
+        "condition_value": document.condition_value
+    }
+
+@app.get("/forms/{form_id}/deadlines", response_model=List[FormDeadlineResponse])
+def get_form_deadlines_endpoint(form_id: int, db = Depends(get_db)):
+    deadlines = db.query(FormDeadline).filter(FormDeadline.form_id == form_id).all()
+    return [
+        {
+            "id": d.id,
+            "form_id": d.form_id,
+            "deadline_type": d.deadline_type,
+            "deadline_date": d.deadline_date
+        } for d in deadlines
+    ]
+
+@app.put("/deadlines/{deadline_id}", response_model=FormDeadlineResponse)
+def update_form_deadline(deadline_id: int, deadline_data: UpdateFormDeadlineRequest, db = Depends(get_db)):
+    deadline = db.query(FormDeadline).filter(FormDeadline.id == deadline_id).first()
+    if not deadline:
+        raise HTTPException(status_code=404, detail="Deadline not found")
+    
+    deadline.deadline_date = deadline_data.deadline_date
+    deadline.updated_at = date.today()
+    
+    db.commit()
+    db.refresh(deadline)
+    
+    return {
+        "id": deadline.id,
+        "form_id": deadline.form_id,
+        "deadline_type": deadline.deadline_type,
+        "deadline_date": deadline.deadline_date
+    }
+
+# Main execution logic
+@app.on_event("startup")
+def startup_event():
+    # Ensure database schema matches expected structure
+    Base.metadata.create_all(bind=engine)
+    
+    # Get the form
+    db = SessionLocal()
+    try:
+        form = get_form_by_name(db, "Fall 2025 Undergraduate Admissions")
+        if not form:
+            raise HTTPException(status_code=404, detail="Form not found")
+        
+        # Add Extracurricular Activities section
+        section_data = CreateFormSectionRequest(
+            name="Extracurricular Activities",
+            description="Details about your extracurricular activities",
+            is_optional=True,
+            max_entries=5,
+            display_order=3
+        )
+        create_form_section(form.id, section_data, db)
+        
+        # Get the newly created section
+        section = get_form_section(db, form.id, "Extracurricular Activities")
+        if not section:
+            raise HTTPException(status_code=404, detail="Section not found")
+        
+        # Add fields to the section
+        field_data = CreateSectionFieldRequest(
+            field_name="activity_name",
+            field_label="Activity Name",
+            field_type="text",
+            is_required=False,
+            display_order=1
+        )
+        create_section_field(section.id, field_data, db)
+        
+        field_data = CreateSectionFieldRequest(
+            field_name="role",
+            field_label="Role",
+            field_type="text",
+            is_required=False,
+            display_order=2
+        )
+        create_section_field(section.id, field_data, db)
+        
+        field_data = CreateSectionFieldRequest(
+            field_name="hours_per_week",
+            field_label="Hours Per Week",
+            field_type="number",
+            is_required=False,
+            display_order=3
+        )
+        create_section_field(section.id, field_data, db)
+        
+        field_data = CreateSectionFieldRequest(
+            field_name="description",
+            field_label="Description",
+            field_type="textarea",
+            is_required=False,
+            display_order=4
+        )
+        create_section_field(section.id, field_data, db)
+        
+        # Find the need-based aid question
+        questions = get_form_questions(db, form.id)
+        need_based_question = None
+        for q in questions:
+            if "need-based aid" in q.question_text.lower():
+                need_based_question = q
+                break
+        
+        if need_based_question:
+            # Add Financial Aid Statement document
+            document_data = CreateFormDocumentRequest(
+                name="Financial Aid Statement",
+                description="Statement regarding financial need",
+                is_required=True,
+                condition_question_id=need_based_question.id,
+                condition_value="Yes"
+            )
+            create_form_document(form.id, document_data, db)
+        
+        # Update regular decision deadline
+        regular_decision_deadline = get_form_deadline(db, form.id, "regular_decision")
+        if regular_decision_deadline:
+            update_form_deadline(regular_decision_deadline.id, UpdateFormDeadlineRequest(deadline_date=date(2025, 1, 5)), db)
+        
+    finally:
+        db.close()

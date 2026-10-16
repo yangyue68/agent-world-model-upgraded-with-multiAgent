@@ -1,0 +1,8 @@
+E:\论文阅读合集\agent-world-model-main\agent-world-model-main\ma_upgrade\output\environment\envs\.work\AdoptPaws_task_2_2aa048e93d\round_0\main.py:34: SAWarning: Can't validate argument 'check_constraint'; can't locate any SQLAlchemy dialect named 'check'
+  gender = Column(String, check_constraint="gender IN ('Male','Female','Unknown')")
+E:\论文阅读合集\agent-world-model-main\agent-world-model-main\ma_upgrade\output\environment\envs\.work\AdoptPaws_task_2_2aa048e93d\round_0\main.py:36: SAWarning: Can't validate argument 'check_constraint'; can't locate any SQLAlchemy dialect named 'check'
+  status = Column(String, default="Available", check_constraint="status IN ('Available','Adopted','Foster','Medical Hold','Deceased')")
+E:\论文阅读合集\agent-world-model-main\agent-world-model-main\ma_upgrade\output\environment\envs\.work\AdoptPaws_task_2_2aa048e93d\round_0\main.py:55: SAWarning: Can't validate argument 'check_constraint'; can't locate any SQLAlchemy dialect named 'check'
+  event_type = Column(String, nullable=False, check_constraint="event_type IN ('Spay/Neuter','Vaccination','Checkup','Dental','Surgery','Injury','Illness','Other')")
+E:\论文阅读合集\agent-world-model-main\agent-world-model-main\ma_upgrade\output\environment\envs\.work\AdoptPaws_task_2_2aa048e93d\round_0\main.py:73: SAWarning: Can't validate argument 'check_constraint'; can't locate any SQLAlchemy dialect named 'check'
+  status = Column(String, default="Completed", check_constraint="status IN ('Completed','Pending','Overdue','Missed')")

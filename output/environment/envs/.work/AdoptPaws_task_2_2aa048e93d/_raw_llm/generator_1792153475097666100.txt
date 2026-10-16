@@ -1,0 +1,190 @@
+```python
+import os
+from datetime import datetime, timedelta
+from typing import Optional, List
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, func, case, and_, or_
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+
+# Database setup
+DATABASE_PATH = os.getenv("DATABASE_URL", "sqlite:///adoptpaws.db")
+engine = create_engine(DATABASE_PATH)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Models
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False)
+    full_name = Column(String)
+    email = Column(String, unique=True)
+    phone = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Animal(Base):
+    __tablename__ = "animals"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    species = Column(String, nullable=False)
+    breed = Column(String)
+    birth_date = Column(Date)
+    gender = Column(String, check_constraint="gender IN ('Male','Female','Unknown')")
+    intake_date = Column(Date)
+    status = Column(String, default="Available", check_constraint="status IN ('Available','Adopted','Foster','Medical Hold','Deceased')")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Veterinarian(Base):
+    __tablename__ = "veterinarians"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    license_number = Column(String, unique=True)
+    clinic_name = Column(String)
+    phone = Column(String)
+    email = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class MedicalEvent(Base):
+    __tablename__ = "medical_events"
+    id = Column(Integer, primary_key=True, index=True)
+    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False)
+    event_type = Column(String, nullable=False, check_constraint="event_type IN ('Spay/Neuter','Vaccination','Checkup','Dental','Surgery','Injury','Illness','Other')") 
+    event_date = Column(Date, nullable=False)
+    description = Column(String)
+    veterinarian_id = Column(Integer, ForeignKey("veterinarians.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    animal = relationship("Animal")
+    veterinarian = relationship("Veterinarian")
+
+class Vaccination(Base):
+    __tablename__ = "vaccinations"
+    id = Column(Integer, primary_key=True, index=True)
+    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False)
+    vaccine_type = Column(String, nullable=False)
+    vaccination_date = Column(Date, nullable=False)
+    next_due_date = Column(Date)
+    status = Column(String, default="Completed", check_constraint="status IN ('Completed','Pending','Overdue','Missed')")
+    veterinarian_id = Column(Integer, ForeignKey("veterinarians.id"))
+    medical_event_id = Column(Integer, ForeignKey("medical_events.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    animal = relationship("Animal")
+    veterinarian = relationship("Veterinarian")
+    medical_event = relationship("MedicalEvent")
+
+# Pydantic models
+class RabiesGapReportItem(BaseModel):
+    animal_id: int
+    animal_name: str
+    surgery_date: str
+    rabies_vaccination_status: Optional[str] = None
+    last_rabies_vaccine_date: Optional[str] = None
+    next_due_date: Optional[str] = None
+    assigned_veterinarian: Optional[str] = None
+
+# FastAPI app
+app = FastAPI()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/medical-events/rabies-gap-report", response_model=List[RabiesGapReportItem], operation_id="get_rabies_gap_report")
+def get_rabies_gap_report(db):
+    # Calculate date 6 months ago
+    six_months_ago = datetime.now().date() - timedelta(days=180)
+    
+    # Subquery to find animals with spay/neuter surgery
+    spay_neuter_subq = (
+        db.query(
+            MedicalEvent.animal_id,
+            func.max(MedicalEvent.event_date).label("surgery_date"),
+            func.max(MedicalEvent.veterinarian_id).label("veterinarian_id")
+        )
+        .filter(
+            and_(
+                MedicalEvent.event_type == "Spay/Neuter",
+                MedicalEvent.event_date >= six_months_ago
+            )
+        )
+        .group_by(MedicalEvent.animal_id)
+        .subquery()
+    )
+    
+    # Subquery to find animals with completed rabies vaccination
+    completed_rabies_subq = (
+        db.query(
+            Vaccination.animal_id,
+            func.max(Vaccination.vaccination_date).label("last_vaccine_date"),
+            func.max(Vaccination.next_due_date).label("next_due_date"),
+            func.max(Vaccination.status).label("status"),
+            func.max(Vaccination.veterinarian_id).label("veterinarian_id")
+        )
+        .filter(
+            and_(
+                Vaccination.vaccine_type == "Rabies",
+                Vaccination.status == "Completed"
+            )
+        )
+        .group_by(Vaccination.animal_id)
+        .subquery()
+    )
+    
+    # Main query
+    query = (
+        db.query(
+            Animal.id.label("animal_id"),
+            Animal.name.label("animal_name"),
+            spay_neuter_subq.c.surgery_date,
+            completed_rabies_subq.c.status.label("rabies_vaccination_status"),
+            completed_rabies_subq.c.last_vaccine_date.label("last_rabies_vaccine_date"),
+            completed_rabies_subq.c.next_due_date.label("next_due_date"),
+            Veterinarian.name.label("assigned_veterinarian")
+        )
+        .select_from(spay_neuter_subq)
+        .join(Animal, Animal.id == spay_neuter_subq.c.animal_id)
+        .outerjoin(completed_rabies_subq, completed_rabies_subq.c.animal_id == spay_neuter_subq.c.animal_id)
+        .outerjoin(Veterinarian, Veterinarian.id == spay_neuter_subq.c.veterinarian_id)
+        .filter(
+            # Only animals that had spay/neuter in the last 6 months
+            spay_neuter_subq.c.surgery_date >= six_months_ago,
+            # Only animals that don't have a completed rabies vaccination
+            or_(
+                completed_rabies_subq.c.animal_id.is_(None),
+                completed_rabies_subq.c.status != "Completed"
+            )
+        )
+        .order_by(Animal.id)
+    )
+    
+    results = query.all()
+    
+    # Convert to Pydantic model instances
+    report_items = []
+    for row in results:
+        item = RabiesGapReportItem(
+            animal_id=row.animal_id,
+            animal_name=row.animal_name,
+            surgery_date=row.surgery_date.strftime("%Y-%m-%d"),
+            rabies_vaccination_status=row.rabies_vaccination_status,
+            last_rabies_vaccine_date=row.last_rabies_vaccine_date.strftime("%Y-%m-%d") if row.last_rabies_vaccine_date else None,
+            next_due_date=row.next_due_date.strftime("%Y-%m-%d") if row.next_due_date else None,
+            assigned_veterinarian=row.assigned_veterinarian
+        )
+        report_items.append(item)
+    
+    return report_items
+```

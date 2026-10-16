@@ -1,0 +1,4 @@
+[
+  "/intakes/lookup: operationId must be lookup_intake_by_term_year_program",
+  "/applicants/filter: operationId must be filter_applicants"
+]

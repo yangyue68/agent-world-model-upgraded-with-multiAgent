@@ -1,0 +1,9 @@
+{
+  "agent": "fixer",
+  "label": "AdoptPaws/task_2",
+  "model": "Qwen3-Coder-30B-A3B-Instruct",
+  "max_tokens": 50000,
+  "chars": 6646,
+  "completion_tokens": 1626,
+  "finish_reason": "stop"
+}

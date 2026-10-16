@@ -1,0 +1,9 @@
+{
+  "agent": "code_generator",
+  "label": "AeroNav Flight Ops Portal/task_2",
+  "model": "Qwen3-Coder-30B-A3B-Instruct",
+  "max_tokens": 50000,
+  "chars": 9418,
+  "completion_tokens": 2299,
+  "finish_reason": "stop"
+}

@@ -1,0 +1,8 @@
+{
+  "verdict": "environment_bug",
+  "issues": [
+    "The query incorrectly filters applications by program_term_id using a subquery that may not correctly resolve to the intended program_term_id. The join condition between Application and ProgramTerm should be direct, not through an intermediate subquery.",
+    "The query does not properly handle cases where there are no applications assigned to a reviewer in a particular stage, which could lead to division by zero when calculating decision_percentage.",
+    "The query uses a group_by clause that includes ReviewCommittee.name but does not ensure that ReviewCommittee.name is functionally dependent on the other grouped columns, potentially leading to incorrect aggregation results."
+  ]
+}

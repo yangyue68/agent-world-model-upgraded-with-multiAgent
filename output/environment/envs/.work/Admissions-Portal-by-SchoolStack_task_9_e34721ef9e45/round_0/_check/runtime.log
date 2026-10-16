@@ -1,0 +1,4 @@
+E:\softsLocation\miniconda\envs\awm2\Lib\site-packages\pydantic\json_schema.py:2463: PydanticJsonSchemaWarning: Default value <sqlalchemy.orm.session.Session object at 0x0000023868F22900> is not JSON serializable; excluding default from JSON schema [non-serializable-default]
+  warnings.warn(message, PydanticJsonSchemaWarning)
+E:\softsLocation\miniconda\envs\awm2\Lib\site-packages\pydantic\json_schema.py:2463: PydanticJsonSchemaWarning: Default value <sqlalchemy.orm.session.Session object at 0x000002386A5CEDE0> is not JSON serializable; excluding default from JSON schema [non-serializable-default]
+  warnings.warn(message, PydanticJsonSchemaWarning)

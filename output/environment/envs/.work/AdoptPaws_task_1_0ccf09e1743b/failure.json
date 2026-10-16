@@ -1,0 +1,8 @@
+{
+  "scenario": "AdoptPaws",
+  "task_id": "task_1",
+  "task": "In AdoptPaws, search for all dogs currently in 'stray hold' or 'medical treatment' status that are 7 years or older, have a temperament of 'calm' or 'gentle', and were intaken more than 30 days ago; return animal ID, name, breed, age, status, microchip ID, intake date, and current location.",
+  "stage": "model_request",
+  "reason": "ReplyError: 响应非正常结束：finish_reason=content_filter",
+  "diagnostics_dir": "output/environment/envs/.work/AdoptPaws_task_1_0ccf09e1743b"
+}

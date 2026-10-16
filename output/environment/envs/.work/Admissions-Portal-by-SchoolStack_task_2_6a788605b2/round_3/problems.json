@@ -1,0 +1,4 @@
+[
+  "The filter_applicants endpoint does not properly handle the case when has_scheduled_interview is explicitly set to False. According to the API specification, if has_scheduled_interview is false or omitted, this constraint should be ignored. However, the current implementation only applies the join when has_scheduled_interview is True, but doesn't exclude applicants when it's False.",
+  "The filter_applicants endpoint does not correctly implement the requirement that applicants must have a scheduled interview. The current implementation uses a subquery that filters interviews by status='Scheduled', but it doesn't ensure that the applicant actually has at least one such interview. This could lead to incorrect results if there are applicants without any interviews at all."
+]

@@ -1,0 +1,88 @@
+{
+  "summary": {
+    "db_dir": "E:\\论文阅读合集\\agent-world-model-main\\agent-world-model-main\\ma_upgrade\\output\\db\\databases",
+    "count": 5,
+    "snapshot_chars": {
+      "count": 5,
+      "total": 22756,
+      "min": 2,
+      "max": 8472,
+      "mean": 4551.2,
+      "median": 4061,
+      "p90": 8472,
+      "p99": 8472
+    },
+    "snapshot_utf8_bytes": {
+      "count": 5,
+      "total": 22756,
+      "min": 2,
+      "max": 8472,
+      "mean": 4551.2,
+      "median": 4061,
+      "p90": 8472,
+      "p99": 8472
+    },
+    "rows_per_db": {
+      "count": 5,
+      "total": 204,
+      "min": 0,
+      "max": 66,
+      "mean": 40.8,
+      "median": 37,
+      "p90": 66,
+      "p99": 66
+    },
+    "tables_per_db": {
+      "count": 5,
+      "total": 27,
+      "min": 0,
+      "max": 10,
+      "mean": 5.4,
+      "median": 4,
+      "p90": 10,
+      "p99": 10
+    }
+  },
+  "per_db": [
+    {
+      "db_file": "Admissions-Portal-by-SchoolStack_task_1.db",
+      "tables": 4,
+      "rows": 37,
+      "chars": 4061,
+      "utf8_bytes": 4061,
+      "empty_tables": []
+    },
+    {
+      "db_file": "Admissions-Portal-by-SchoolStack_task_10.db",
+      "tables": 0,
+      "rows": 0,
+      "chars": 2,
+      "utf8_bytes": 2,
+      "empty_tables": []
+    },
+    {
+      "db_file": "Admissions-Portal-by-SchoolStack_task_2.db",
+      "tables": 4,
+      "rows": 36,
+      "chars": 3845,
+      "utf8_bytes": 3845,
+      "empty_tables": []
+    },
+    {
+      "db_file": "Admissions-Portal-by-SchoolStack_task_3.db",
+      "tables": 9,
+      "rows": 66,
+      "chars": 6376,
+      "utf8_bytes": 6376,
+      "empty_tables": []
+    },
+    {
+      "db_file": "Admissions-Portal-by-SchoolStack_task_4.db",
+      "tables": 10,
+      "rows": 65,
+      "chars": 8472,
+      "utf8_bytes": 8472,
+      "empty_tables": []
+    }
+  ]
+}

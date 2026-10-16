@@ -1,0 +1,4 @@
+[
+  "The database schema defines CheckConstraint using `check=` parameter instead of `sqltext=` as required by the task specification. This will cause runtime errors when the constraints are evaluated.",
+  "The SQLAlchemy model definitions use string literals for default values like \"CURRENT_TIMESTAMP\" instead of actual SQLAlchemy functions like `func.current_timestamp()`. This can lead to incorrect behavior in queries that rely on these defaults."
+]
