@@ -62,6 +62,7 @@ class Config:
     max_steps: int = 10                # 每条 rollout 最大步数
     temperature: float = 1.0           # 采样温度
     max_new_tokens: int = 512          # 单次生成最大 token
+    enable_thinking: bool = False      # 是否开启被评估 policy 的 Qwen3 thinking
     device: str = "cuda"               # 设备
     limit_scenarios: int | None = None  # 只评前 N 个场景
     max_tasks: int | None = None        # 每场景只评前 N 个任务
@@ -261,7 +262,8 @@ def evaluate(config: Config):
                 logger.warning(f"[eval] {scenario} task {task_id} 样本 {s} env 启动失败：{e}")
                 return 0
             traj = rollout(model, tk, task, env, config.max_steps, config.temperature,
-                    config.max_new_tokens, config.device)
+                    config.max_new_tokens, config.device,
+                    enable_thinking=config.enable_thinking)
 
             # env 5xx（运行时环境 bug）→ 记录 env_5xx
             if traj.get("has_5xx"):

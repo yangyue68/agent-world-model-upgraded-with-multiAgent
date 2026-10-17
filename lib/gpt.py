@@ -104,6 +104,31 @@ class GPTClient:
                 timeout=self.timeout,
             )
 
+    @staticmethod
+    def _env_truthy(name: str, default: bool = False) -> bool:
+        """读取布尔环境变量，供所有阶段共享同一套请求策略。"""
+        value = os.environ.get(name)
+        if value is None:
+            return default
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _thinking_extra_body(self, model: str) -> dict | None:
+        """返回当前模型关闭 thinking 所需的私有接口参数。
+
+        Qwen3 和 DeepSeek 使用的 vLLM 参数不同。模型名不含这些家族名时，
+        默认不附加非标准字段，以免官方 OpenAI/Azure 接口因未知参数拒绝请求。
+        对 OpenAI 兼容的私有部署，可用 AWM_SYN_DISABLE_THINKING=1 强制使用
+        Qwen/vLLM 的 chat_template 参数，让所有阶段共享关闭开关。
+        """
+        model_lower = (model or "").lower()
+        if "deepseek" in model_lower:
+            return {"thinking": {"type": "disabled"}}
+        if "qwen3" in model_lower:
+            return {"chat_template_kwargs": {"enable_thinking": False}}
+        if self.provider == "openai" and self._env_truthy("AWM_SYN_DISABLE_THINKING"):
+            return {"chat_template_kwargs": {"enable_thinking": False}}
+        return None
+
     def _obj_to_plain(self, obj: any) -> any:
         # 把任意对象递归转成"纯 Python 结构"（dict/list/基础类型），便于包装成可点号访问的结构。
         if obj is None or isinstance(obj, (str, int, float, bool)):
@@ -185,13 +210,13 @@ class GPTClient:
 
         params.update(kwargs)  # 合并额外参数
         # deepseek 系列默认禁用 thinking（省时间 + 省钱）：除非调用方显式传了 extra_body
-        if "deepseek" in (params.get("model") or "").lower() and "extra_body" not in params:
-            params["extra_body"] = {"thinking": {"type": "disabled"}}
+        if "extra_body" not in params:
+            thinking_body = self._thinking_extra_body(params.get("model", ""))
+            if thinking_body is not None:
+                params["extra_body"] = thinking_body
         # 对支持思考模式的 Qwen3 显式关闭 thinking，减少生成开销。
         # <tool_call> 特殊 token 导致的空内容由 rollout 的普通文本标签解决，
         # 不能依靠 enable_thinking=False 修复。调用方已有 extra_body 时保持其配置。
-        if "qwen3" in (params.get("model") or "").lower() and "extra_body" not in params:
-            params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         if temperature is not None:
             params["temperature"] = temperature  # 设置温度
         if max_completion_tokens is not None:

@@ -30,6 +30,7 @@ def collect_rollouts(state, item):
                 config.max_steps, config.temperature, config.max_new_tokens,
                 config.device, verbose=config.verbose,
                 max_tokens_per_batch=config.max_tokens_per_batch,
+                enable_thinking=config.enable_thinking,
             )
         results = []
         for trajectory, env in zip(trajectories, envs):

@@ -234,16 +234,15 @@ def _pad_batch(prompts: list, pad_token_id: int, device: str):
     return batch_ids, attn_mask
 
 
-def _build_prompt_ids(tokenizer, messages) -> torch.Tensor:
+def _build_prompt_ids(tokenizer, messages, enable_thinking: bool = False) -> torch.Tensor:
     """把 messages 转成 1D prompt token（处理新旧 transformers 返回差异）。
 
-    传 enable_thinking=False 关闭 Qwen3 的「思考模式」——否则模型每步在 <think> 里长篇思考，
-    占满 max_new_tokens 导致 tool_call 的 arguments 截断（JSON 不完整、解析失败）。
-    若 tokenizer 不支持该参数则回退到默认（此时靠 _apply_assistant_text 兼容 <think>）。
+    enable_thinking=False 时关闭 Qwen3 的「思考模式」；开启时保留模型的思考过程。
+    若 tokenizer 不支持该参数则回退到默认模板行为。
     """
     try:
         pid = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
-                                            return_tensors="pt", enable_thinking=False)
+                                            return_tensors="pt", enable_thinking=enable_thinking)
     except Exception:
         pid = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
                                             return_tensors="pt")
@@ -260,7 +259,9 @@ def _strip_padding(completion: torch.Tensor, pad_token_id: int) -> torch.Tensor:
     return completion
 
 
-def rollout_batch(model, tokenizer, task, envs, max_steps, temperature, max_new_tokens=1024, device="cuda", verbose=False, max_tokens_per_batch=9000):
+def rollout_batch(model, tokenizer, task, envs, max_steps, temperature, max_new_tokens=1024,
+                  device="cuda", verbose=False, max_tokens_per_batch=9000,
+                  enable_thinking: bool = False):
     """批量 rollout：group_size 条轨迹同步推进 step，每个 step batch generate。
 
     返回 list[traj_dict]（与 envs 顺序对应）。每条 traj 含 prompt_ids / completion_ids /
@@ -280,7 +281,7 @@ def rollout_batch(model, tokenizer, task, envs, max_steps, temperature, max_new_
         # 每条活跃 rollout 构建当前 prompt（tokenize，不 pad）
         prompts = []
         for s in active:
-            prompts.append(_build_prompt_ids(tokenizer, s.messages))
+            prompts.append(_build_prompt_ids(tokenizer, s.messages, enable_thinking=enable_thinking))
 
         max_len = max(p.shape[0] for p in prompts)  # 最长 prompt 长度（left-pad 后，生成从 max_len 开始）
         if verbose:
@@ -346,7 +347,8 @@ def rollout_batch(model, tokenizer, task, envs, max_steps, temperature, max_new_
     ]
 
 
-def rollout(model, tokenizer, task, env, max_steps, temperature, max_new_tokens=1024, device="cuda"):
+def rollout(model, tokenizer, task, env, max_steps, temperature, max_new_tokens=1024,
+            device="cuda", enable_thinking: bool = False):
     """单条 rollout（eval 用）：一条轨迹独立跑完 max_steps 步。
 
     与 rollout_batch 共用同一套多标签解析（_apply_assistant_text），只是 generate 是单条。
@@ -359,7 +361,7 @@ def rollout(model, tokenizer, task, env, max_steps, temperature, max_new_tokens=
         check_cancelled()
         if state.done:
             break
-        pid = _build_prompt_ids(tokenizer, state.messages)
+        pid = _build_prompt_ids(tokenizer, state.messages, enable_thinking=enable_thinking)
         state.prompt_len = pid.shape[0]
         prompt_ids = pid.unsqueeze(0).to(device)
 
