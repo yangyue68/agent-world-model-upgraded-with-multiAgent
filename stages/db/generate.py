@@ -54,7 +54,7 @@ class Config:
     allowed_scenarios: list[str] | None = None  # 只处理这些场景
     limit: int | None = None                  # 只处理前 limit 个场景
     max_retry: int = 3                        # 设计+评审循环最大轮次
-    max_concurrency: int = 5                  # 任务级并发数
+    max_concurrency: int = 3                  # 任务级并发数
     resume: bool = True                      # 是否断点续跑（跳过 output 里已完成的场景）
     max_tokens=50000
 

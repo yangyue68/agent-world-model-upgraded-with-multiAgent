@@ -18,7 +18,7 @@ class Config:
     trajectory_dir: str = str(ROOT / "output/environment/trajectory")
     model: str = "your-llm-model-name"
     probe_model: str = "your-llm-model-name"
-    max_concurrency: int = 10
+    max_concurrency: int = 6
     # 非流式请求里该超时≈整次生成时长上限；observed 约 130 tok/s，max_tokens=50000 合法生成就需 6-7 分钟。
     # 1200s 挂起恢复太慢，180s 会误杀长生成，取 GPTClient 默认 600s。
     request_timeout: float = 600.0
@@ -27,7 +27,7 @@ class Config:
     max_fix_retry: int = 4
     rollout_count: int = 1
     max_probe_retry: int = 1
-    max_steps: int = 12
+    max_steps: int = 15
     max_tokens: int = 50000
     probe_temperature: float = 0.0
     resume: bool = True

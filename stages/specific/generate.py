@@ -36,10 +36,9 @@ def run(config):
         Path(config.output).write_text("", encoding="utf-8")
     else:
         Path(config.output).touch(exist_ok=True)
-    if not config.resume:
-        Path(config.bad_output).write_text("", encoding="utf-8")
-    else:
-        Path(config.bad_output).touch(exist_ok=True)
+    # 坏任务文件每次启动清空、只记录本次运行：没通过的任务无论是否续跑都会在本轮重新尝试并
+    # 重新写入，跨运行保留旧坏记录只会让文件越滚越大、掩盖本轮真实失败情况。
+    Path(config.bad_output).write_text("", encoding="utf-8")
     for failure in failures:
         append_jsonl(config.bad_output, failure)
     logger.info(
