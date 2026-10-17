@@ -36,7 +36,12 @@ from lib.interrupt import (
     run_cli,
 )
 from lib.llm_judge import LLM_JUDGE_SYSTEM_PROMPT, llm_judge
-from lib.tools import normalize_scenario_name, safe_dir_name
+from lib.tools import (
+    normalize_scenario_name,
+    portable_project_path,
+    resolve_project_path,
+    safe_dir_name,
+)
 
 _OUTPUT_DIR = _PROJECT_ROOT / "output" / "verifier"
 _MODE = "env_rollout_llm_judge_single_trajectory_v2"
@@ -98,19 +103,11 @@ class Config:
 
 
 def _project_path(raw: str | Path) -> Path:
-    path = Path(raw)
-    if path.is_absolute():
-        return path.resolve()
-    if path.parts and path.parts[0] == _PROJECT_ROOT.name:
-        path = Path(*path.parts[1:])
-    return (_PROJECT_ROOT / path).resolve()
+    return resolve_project_path(raw, _PROJECT_ROOT)
 
 
 def _portable_path(path: Path) -> str:
-    try:
-        return path.resolve().relative_to(_PROJECT_ROOT).as_posix()
-    except ValueError:
-        return str(path.resolve())
+    return portable_project_path(path, _PROJECT_ROOT)
 
 
 def _json_text(value: Any) -> str:

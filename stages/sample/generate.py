@@ -41,7 +41,8 @@ from stages.db.db_utils import create_sqlite_database   # 复用原项目的建�
 from lib.gpt import GPTClient   # 大模型客户端（给 data_generator/fixer 配更长超时）
 from lib.tools import (                          # 项目自带的实用小工具
     tools_jsonl_load,
-    normalize_scenario_name, format_db_schema
+    normalize_scenario_name, format_db_schema, portable_project_path,
+    resolve_project_path,
 )
 
 from lib.db_diff import snapshot_db, snapshot_size
@@ -74,6 +75,9 @@ class Config:
     max_snapshot_chars: int = 10 * 1024
 
     def pre_process(self):
+        for name in ("input_task", "input_db", "output", "bad_output", "database_dir"):
+            value = getattr(self, name)
+            setattr(self, name, str(resolve_project_path(value, _PROJECT_ROOT)))
         """开工前检查：补齐默认值、校验输入、解析模型名。"""
         if self.limit is None:
             self.limit = int(1e18)
@@ -328,7 +332,7 @@ def _build_result(scenario_name: str, task_id: str, task: str, db_path: str, sam
         "scenario": scenario_name,
         "task_id": task_id,
         "task": task,
-        "db_path": db_path,
+        "db_path": portable_project_path(db_path, _PROJECT_ROOT),
         "tables_count": total_tables,
         "inserts_count": total_inserts,
         "sample_data": sample_data,
@@ -347,8 +351,8 @@ def generate_sample_for_task(task_item: dict, db_item: dict, config: Config):
     tasks = [task]   # 单任务列表（任务级：只为这一个任务设计初始状态）
     db_schema = db_item.get("db_schema", {})
     db_path = db_item.get("db_path", "")   # 任务级 db 路径（db 阶段已建好，这里只清数据 + 执行 INSERT）
-    if db_path and not os.path.isabs(db_path):
-        db_path = os.path.join(_PROJECT_ROOT, db_path)   # 相对路径 → 还原为绝对路径
+    if db_path:
+        db_path = str(resolve_project_path(db_path, _PROJECT_ROOT))
 
     sample_data = None
     problems = ""   # 本轮收集的问题（规则校验 + 语义评审 + 执行报错），下一轮交给 fixer

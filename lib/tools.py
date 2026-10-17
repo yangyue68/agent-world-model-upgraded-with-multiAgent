@@ -23,7 +23,7 @@ import random             # 随机：随机端口
 
 from tiktoken import encoding_for_model  # OpenAI token 计数
 from json_repair import repair_json      # JSON 修复
-from pathlib import Path                 # 路径处理
+from pathlib import Path, PurePosixPath  # 路径处理
 from loguru import logger                # 日志工具
 from lib.interrupt import cancellable, check_cancelled, interruptible_sleep
 from mcp import ClientSession              # mcp 官方客户端（与 mcp 1.x 协议匹配）
@@ -32,6 +32,62 @@ try:
     from mcp.client.streamable_http import streamablehttp_client
 except ImportError:
     from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
+
+
+_WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _portable_parts(value: str) -> tuple[str, ...]:
+    """Split Windows or POSIX path spelling into comparable components."""
+    normalized = str(value).replace("\\", "/")
+    return tuple(part for part in PurePosixPath(normalized).parts if part not in ("/", ""))
+
+
+def resolve_project_path(raw, project_root=None) -> Path:
+    """Resolve paths from artifacts copied between Windows and Linux.
+
+    ``os.path.isabs('E:\\...')`` is false on Linux.  Older JSONL artifacts
+    therefore used to become ``<linux-root>/E:\\...`` when consumed on the
+    server.  If a path contains the current project marker, map everything
+    after that marker into the current checkout. Existing native absolute
+    paths are kept intact so external resources remain usable.
+    """
+    root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
+    if raw is None:
+        return root
+    text = str(raw).strip()
+    if not text:
+        return root
+    normalized = text.replace("\\", "/")
+    candidate = Path(normalized)
+    if candidate.is_absolute() and candidate.exists():
+        return candidate.resolve()
+
+    parts = _portable_parts(normalized)
+    marker = root.name.casefold()
+    marker_indexes = [index for index, part in enumerate(parts) if part.casefold() == marker]
+    if marker_indexes:
+        suffix = parts[marker_indexes[-1] + 1:]
+        return (root.joinpath(*suffix) if suffix else root).resolve()
+
+    if _WINDOWS_ABS_RE.match(text):
+        # Preserve an unrelated missing Windows path for a useful error.
+        return Path(normalized)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    if parts and parts[0].casefold() == marker:
+        parts = parts[1:]
+    return root.joinpath(*parts).resolve()
+
+
+def portable_project_path(raw, project_root=None) -> str:
+    """Serialize a project path as a POSIX relative path when possible."""
+    root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
+    value = resolve_project_path(raw, root)
+    try:
+        return value.relative_to(root).as_posix()
+    except ValueError:
+        return value.as_posix()
 
 
 def dump_sqlite_to_string(db_path: str) -> str:

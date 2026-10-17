@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 
+from lib.tools import resolve_project_path
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -40,10 +42,7 @@ class Config:
         self.model = os.environ.get("AWM_SYN_OVERRIDE_MODEL", self.model)
         self.probe_model = os.environ.get("AWM_SYN_OVERRIDE_MODEL", self.probe_model)
         for name in ("input_spec", "input_task", "input_db", "input_sample", "output", "bad_output", "envs_dir", "trajectory_dir"):
-            value = Path(getattr(self, name))
-            if not value.is_absolute():
-                value = ROOT / value
-            setattr(self, name, str(value.resolve()))
+            setattr(self, name, str(resolve_project_path(getattr(self, name), ROOT)))
         for name in ("output", "bad_output", "envs_dir", "trajectory_dir"):
             Path(getattr(self, name)).parent.mkdir(parents=True, exist_ok=True)
         Path(self.envs_dir).mkdir(parents=True, exist_ok=True)

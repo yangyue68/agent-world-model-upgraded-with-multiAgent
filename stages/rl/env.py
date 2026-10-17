@@ -36,7 +36,7 @@ from sqlalchemy.exc import IntegrityError
 # 复用 lib.runtime 的 db 重建（建干净库 + 保存 initial.db 快照）
 from lib.runtime import ServerConfig, _prepare_database
 from lib.interrupt import cancellable, check_cancelled
-from lib.tools import normalize_scenario_name
+from lib.tools import normalize_scenario_name, resolve_project_path
 
 # 定位 ma_upgrade 目录（env.py 上溯三级：rl → stages → ma_upgrade）
 _MA_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -460,7 +460,7 @@ class InProcessEnv:
         if is_single_file:
             source = self.initial_db_source
             if source:
-                source = str((Path(_MA_ROOT) / source).resolve())
+                source = str(resolve_project_path(source, _PROJECT_ROOT))
             else:
                 if self.task_id is None:
                     raise ValueError("单文件任务环境必须提供 task_id 或 initial_db_source，不能回退到场景首个数据库")
@@ -488,10 +488,7 @@ class InProcessEnv:
         self.initial_db_path = os.path.abspath(os.path.join(self.output_dir, "initial.db"))
         self.db_file_path = os.path.abspath(os.path.join(self.output_dir, "final.db"))
         if self.initial_db_source:
-            source = self.initial_db_source
-            if not os.path.isabs(source):
-                source = os.path.join(str(_PROJECT_ROOT), source)
-            source = os.path.abspath(source)
+            source = str(resolve_project_path(self.initial_db_source, _PROJECT_ROOT))
             if not os.path.exists(source):
                 raise FileNotFoundError(f"Initial database not found: {source}")
             shutil.copy2(source, self.initial_db_path)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from lib.db_diff import snapshot_db
-from lib.tools import normalize_scenario_name, tools_jsonl_load
+from lib.tools import normalize_scenario_name, resolve_project_path, tools_jsonl_load
 from stages.rl.config import Config
 
 
@@ -71,8 +71,8 @@ def fill_initial_snapshots(bundle: DatasetBundle, ma_root) -> None:
         if item.verifier.get("initial_snapshot") is not None:
             continue
         source = item.verifier.get("db_path", "")
-        if source and not os.path.isabs(source):
-            source = os.path.join(str(ma_root), source)
+        if source:
+            source = str(resolve_project_path(source, ma_root))
         if source and os.path.exists(source):
             item.verifier["initial_snapshot"] = snapshot_db(source)
 
@@ -84,8 +84,7 @@ def _load_env_dirs(config: Config, ma_root) -> dict[tuple[str, int], str]:
         env_dir = entry.get("env_dir")
         if not env_dir:
             continue
-        if not os.path.isabs(env_dir):
-            env_dir = os.path.join(str(ma_root), env_dir)
+        env_dir = str(resolve_project_path(env_dir, ma_root))
         task_id = entry.get("task_id", "")
         try:
             task_index = int(task_id.split("_", 1)[1]) - 1

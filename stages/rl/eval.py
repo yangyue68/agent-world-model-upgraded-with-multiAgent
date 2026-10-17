@@ -38,7 +38,7 @@ for _p in (str(_MA_ROOT), str(_PROJECT_ROOT)):
 # tools_jsonl_load：读 jsonl；normalize_scenario_name：规范化场景名
 from lib.interrupt import run_cli, check_cancelled
 from lib.interrupt import InterruptibleThreadPoolExecutor as ThreadPoolExecutor, as_completed
-from lib.tools import tools_jsonl_load, normalize_scenario_name
+from lib.tools import tools_jsonl_load, normalize_scenario_name, resolve_project_path
 from lib.gpt import GPTClient
 from lib.db_diff import snapshot_db
 
@@ -157,8 +157,7 @@ def evaluate(config: Config):
         env_dir = e.get("env_dir")
         if not env_dir:
             continue
-        if not os.path.isabs(env_dir):
-            env_dir = os.path.join(str(_MA_ROOT), env_dir)
+        env_dir = str(resolve_project_path(env_dir, _MA_ROOT))
         tid = e.get("task_id", "")
         try:
             idx = int(tid.split("_", 1)[1]) - 1  # "task_1" -> 0（0-based）
@@ -177,8 +176,8 @@ def evaluate(config: Config):
     for sample_entry in sample_map.values():
         if sample_entry.get("initial_snapshot") is None:
             source = sample_entry.get("db_path", "")
-            if source and not os.path.isabs(source):
-                source = os.path.join(str(_MA_ROOT), source)
+            if source:
+                source = str(resolve_project_path(source, _MA_ROOT))
             if source and os.path.exists(source):
                 sample_entry["initial_snapshot"] = snapshot_db(source)
 

@@ -5,6 +5,7 @@ import json
 
 from loguru import logger
 from lib.single_file_env import ENV_VERSION
+from lib.tools import portable_project_path, resolve_project_path
 
 
 def read_jsonl(path):
@@ -38,7 +39,9 @@ def resume_keys(path, root):
         if row.get("env_version") != ENV_VERSION:
             logger.warning(f"[续跑] {key} 产物版本 {row.get('env_version')} 非 {ENV_VERSION}，重跑")
             continue
-        if not (Path(root) / row["env_dir"] / "main.py").is_file() or not (Path(root) / row["traj_dir"] / "traj.json").is_file():
+        env_dir = resolve_project_path(row["env_dir"], root)
+        traj_dir = resolve_project_path(row["traj_dir"], root)
+        if not (env_dir / "main.py").is_file() or not (traj_dir / "traj.json").is_file():
             logger.warning(f"[续跑] {key} 的 envs/trajectory 目录缺失，重跑")
             continue
         valid.add(key)
@@ -55,11 +58,7 @@ def fingerprint(record):
 
 
 def portable(path, root):
-    value = Path(path).resolve()
-    try:
-        return value.relative_to(Path(root).resolve()).as_posix()
-    except ValueError:
-        return str(value)
+    return portable_project_path(path, root)
 
 
 def merge_inputs(config):
@@ -85,9 +84,8 @@ def merge_inputs(config):
                 "api_spec": spec.get("api_spec", {}), "db_schema": db.get("db_schema", {}),
                 "db_path": db["db_path"], "initial_snapshot": sample.get("initial_snapshot", {}),
                 "initial_snapshot_len": sample.get("initial_snapshot_len")}
-        if not Path(item["db_path"]).is_absolute():
-            project_root = Path(config.input_db).resolve().parents[2]
-            item["db_path"] = str((project_root / item["db_path"]).resolve())
+        project_root = Path(config.input_db).resolve().parents[2]
+        item["db_path"] = str(resolve_project_path(item["db_path"], project_root))
         if not Path(item["db_path"]).is_file():
             failures.append({"scenario": key[0], "task_id": key[1], "stage": "input", "reason": f"数据库不存在: {item['db_path']}"})
             continue
