@@ -43,7 +43,9 @@ def process_results(state, item, results, epoch: int):
         successful_calls = trajectory.get("successful_calls", 0)
         process_rate = successful_calls / total_calls if total_calls else 0.0
         reward = 1.0 + 0.3 * process_rate if reward_type == "complete" else (
-            0.3 + 0.3 * process_rate if reward_type == "ordered" else 0.0
+            0.3 + 0.3 * process_rate if reward_type == "ordered" else (
+                0.1 + 0.25 * process_rate if reward_type == "partial" else 0.0
+            )
         )
         trajectories.append(trajectory)
         rewards.append(reward)

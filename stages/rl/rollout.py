@@ -75,8 +75,9 @@ def _get_system_prompt(max_steps: int = 10) -> str:
         1. <awm_tool_call>{{"name": <function-name>, "arguments": <args-json-object>}}</awm_tool_call>
            → Call ONE tool (list_tools / get_tool_detail_of / call_tool). Call only ONE tool per step.
 
-        2. <final_answer>...</final_answer>
-           → Your final answer. Use this ONLY when the task is FULLY completed (and you have no more tools to call).
+         2. <final_answer>...</final_answer>
+            → Your final answer. Use this ONLY when the task is FULLY completed (and you have no more tools to call).
+            You MUST repeat the requested result inside this tag. The tag is the answer to the user.
 
         HOW TO CALL A BUSINESS TOOL (call_tool) — WORKED EXAMPLE:
         - Business tools are called through the SAME "<awm_tool_call>" tag. The only difference from list_tools/get_tool_detail_of is that the business tool name and its arguments go INSIDE the "arguments" field of call_tool.
@@ -98,7 +99,10 @@ def _get_system_prompt(max_steps: int = 10) -> str:
         - If your step is not exactly "<awm_tool_call>...</awm_tool_call>" or "<final_answer>...</final_answer>", it will be treated as the end of the task and you will FAIL.
         - Emit ONLY ONE tag per step, and nothing else (no surrounding prose, no markdown fences).
 
-        If the task only changes the database and requires no information to be returned, use exactly:
+         FINAL ANSWER RULES (CRITICAL):
+         - If the task asks to search, list, find, compare, calculate, or return any information, your final_answer MUST contain that information. Do not say that no return value is needed.
+         - A successful tool response is not itself the final answer. You must restate the relevant result in final_answer.
+         - Use the following no-return sentence ONLY when the task exclusively changes database state and explicitly requests no report or returned information:
         <final_answer>This task requires no return value. I have completed the task.</final_answer>
 
         Stopping rule (IMPORTANT):
@@ -140,6 +144,8 @@ class RolloutState:
         self.prompt_len = 0               # 当前 step 的真实 prompt 长度（截取 completion 用）
         self.successful_calls = 0         # 成功的业务工具调用数（返回非错误或 404）
         self.total_calls = 0              # 业务工具调用总数（call_tool 次数）
+        self.format_violations = 0        # 未被协议解析的模型回复次数
+        self.format_resends = 0           # 已发送的系统纠错次数
 
 
 def _is_successful_call(result: str) -> bool:
@@ -206,17 +212,28 @@ def _apply_assistant_text(state: RolloutState, text: str, verbose: bool = False)
             if verbose:
                 # 环境回复（list_tools/get_tool_detail_of 的回复可能很长，截断）
                 logger.info(f"    [环境回复] {result[:600]}")
-            state.messages.append({"role": "user", "content": f"Tool response:\n{result}"})
+            state.messages.append({"role": "tool", "content": f"Tool response:\n{result}"})
         return "executed"
 
     if "<final_answer>" in text:
         return "done"
 
     if "<think" in text:  # 兼容 <think>（Qwen3 原生思考标签）和 <thinking>（我们的协议，以 <think 开头）
-        state.messages.append({"role": "user", "content": "continue"})
+        state.format_violations += 1
+        state.format_resends += 1
+        state.messages.append({
+            "role": "system",
+            "content": "Your previous response used a thinking tag without a tool call or final_answer. Continue the task and output exactly one <awm_tool_call>...</awm_tool_call> or one <final_answer>...</final_answer> tag.",
+        })
         return "continue"
 
-    return "done"
+    state.format_violations += 1
+    state.format_resends += 1
+    state.messages.append({
+        "role": "system",
+        "content": "Your previous response was not recognized as a valid environment action. Do not use native function-calling, DSML, markdown, or prose outside the protocol. Output exactly one <awm_tool_call>...</awm_tool_call> or one <final_answer>...</final_answer> tag. If the task asks for information, include the actual result inside final_answer.",
+    })
+    return "continue"
 
 
 def _pad_batch(prompts: list, pad_token_id: int, device: str):
@@ -342,6 +359,8 @@ def rollout_batch(model, tokenizer, task, envs, max_steps, temperature, max_new_
             "tool_call_names": s.tool_call_names,
             "successful_calls": s.successful_calls,
             "total_calls": s.total_calls,
+            "format_violations": s.format_violations,
+            "format_resends": s.format_resends,
         }
         for s in states
     ]
@@ -393,4 +412,6 @@ def rollout(model, tokenizer, task, env, max_steps, temperature, max_new_tokens=
         "tool_call_names": state.tool_call_names,
         "successful_calls": state.successful_calls,
         "total_calls": state.total_calls,
+        "format_violations": state.format_violations,
+        "format_resends": state.format_resends,
     }

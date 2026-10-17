@@ -76,4 +76,8 @@ def compute_reward(initial_db_path: str, final_db_path: str,
         return "env_error", "LLM judge classified the rollout as a server/environment error"
     if classification == "agent_error":
         return "others", None
-    return ("ordered" if order_ok else "others"), None
+    if classification == "incomplete":
+        # Preserve a small learning signal for useful, correctly ordered
+        # tool work even when the agent stopped before a complete answer.
+        return ("partial" if order_ok else "others"), None
+    return "others", None
