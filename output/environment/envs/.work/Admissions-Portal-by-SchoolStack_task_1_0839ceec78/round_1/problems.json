@@ -1,4 +1,0 @@
-[
-  "The database schema defines a CheckConstraint on the 'camps' table using sqltext= but the current implementation incorrectly uses check= in the SQLAlchemy model definition. This will cause a runtime error when trying to create the table.",
-  "The query logic for filtering applicants who do NOT have a specific document type is flawed. It should use a LEFT JOIN with a subquery that excludes applicants with the document type, rather than an outer join with a filter on NULL values."
-]

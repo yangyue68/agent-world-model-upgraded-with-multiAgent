@@ -1,7 +1,0 @@
-{
-  "verdict": "environment_bug",
-  "issues": [
-    "The database schema defines a composite unique constraint on (user_id, camp_id) in the applicants table, but the initial snapshot data contains duplicate user_id values for different camp_ids (e.g., user_id=1 appears with camp_id=1 and user_id=2 appears with camp_id=1). This violates the unique constraint and will cause errors when trying to insert or update records.",
-    "The check constraint on the camps table uses a non-standard SQL expression that may not be supported by SQLite: 'name || '_' || term || '_' || year IS NOT NULL'. This should be replaced with a proper unique constraint using individual columns."
-  ]
-}

@@ -6,7 +6,7 @@
   → ③ SQLReviewer(整体评审+逐表verdicts) → ④ 真正建库(复用 create_sqlite_database) → ⑤ Fixer 修复
 
 运行方式（在项目根目录 ma_upgrade/ 下）：
-python -m stages.db.generate --input output/task/gen_tasks_ma.jsonl
+python -m stages.db.generate
 """
 
 import json     # 把评审意见/建库错误序列化成 JSON 字符串
@@ -24,7 +24,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 _DEFAULT_OUTPUT = str(_PROJECT_ROOT / "output" / "db" / "gen_db_ma.jsonl")
 _DEFAULT_DB_DIR = str(_PROJECT_ROOT / "output" / "db" / "databases")
 _DEFAULT_BAD_OUTPUT = str(_PROJECT_ROOT / "output" / "db" / "db_bad_tasks.jsonl")
-
+_DEFAULT_TASK= str(_PROJECT_ROOT / "output" / "task" / "gen_tasks_ma.jsonl")
 from loguru import logger   # 日志工具
 
 from lib.interrupt import run_cli, check_cancelled
@@ -46,7 +46,7 @@ from tqdm import tqdm   # 进度条
 @dataclass
 class Config:
     """数据库表结构生成的配置项。"""
-    input: str                                # 任务文件（gen_tasks.jsonl）
+    input: str = _DEFAULT_TASK                              # 任务文件（gen_tasks.jsonl）
     output: str = _DEFAULT_OUTPUT             # 输出文件（默认绝对路径）
     bad_output: str = _DEFAULT_BAD_OUTPUT     # 坏任务清单（每次跑完记录失败的任务）
     database_dir: str = _DEFAULT_DB_DIR       # .db 文件存放目录

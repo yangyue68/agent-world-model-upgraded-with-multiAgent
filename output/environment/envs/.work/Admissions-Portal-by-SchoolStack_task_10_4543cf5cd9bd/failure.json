@@ -1,8 +1,0 @@
-{
-  "scenario": "Admissions Portal by SchoolStack",
-  "task_id": "task_10",
-  "task": "In Admissions Portal by SchoolStack, for the Fall 2025 Undergraduate intake, bulk-assign all 42 unassigned applications from the Computer Science program to reviewer Priya Raman, attach the Undergraduate Holistic Review v3 rubric, set the review deadline to November 20, 2025, and add a comment thread note asking reviewers to prioritize applicants with incomplete financial aid documents.",
-  "stage": "model_request",
-  "reason": "ReplyError: 响应非正常结束：finish_reason=content_filter",
-  "diagnostics_dir": "output/environment/envs/.work/Admissions-Portal-by-SchoolStack_task_10_4543cf5cd9bd"
-}

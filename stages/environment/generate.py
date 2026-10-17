@@ -1,5 +1,9 @@
-"""Command line entry point for task-level single-file environment generation."""
-import shutil
+"""Command line entry point for task-level single-file environment generation.
+
+续跑机制与 specific 阶段一致：默认 resume=True + append_jsonl 追加写，
+已通过任务由 resume_keys 校验后跳过；显式关闭 resume 时才先清空两个 jsonl。
+产物只有 output/environment/{gen_envs_ma,env_generate_bad}.jsonl 与 {envs,trajectory}/ 目录。
+"""
 import time
 from collections import Counter
 from pathlib import Path
@@ -7,26 +11,35 @@ from loguru import logger
 from lib.interrupt import run_cli, check_cancelled, as_completed, InterruptibleThreadPoolExecutor
 from .config import Config
 from .pipeline import generate_environment
-from .storage import merge_inputs, read_jsonl, task_key, write_jsonl
+from .storage import append_jsonl, merge_inputs, resume_keys, task_key
 
 
 def run(config):
     items, input_failures = merge_inputs(config)
-    previous = read_jsonl(config.output) if config.resume and Path(config.output).is_file() else []
-    completed = {task_key(row): row for row in previous if row.get("env_dir") and row.get("traj_dir")}
-    pending = [item for item in items if task_key(item) not in completed]
+    root = Path(config.envs_dir).resolve().parents[2]
+    done = resume_keys(config.output, root) if config.resume else set()
+    skipped = sum(task_key(item) in done for item in items)
+    pending = [item for item in items if task_key(item) not in done]
     if config.allowed_scenarios:
         pending = [item for item in pending if item["scenario"] in set(config.allowed_scenarios)]
     if config.limit is not None:
         pending = pending[:config.limit]
-    Path(config.output).parent.mkdir(parents=True, exist_ok=True)
-    write_jsonl(config.output, completed.values())
-    write_jsonl(config.bad_output, input_failures)
-    logger.info(f"[进度 0/{len(pending)}] 输入={len(items)} 续跑={len(completed)} 输入淘汰={len(input_failures)} 并发={config.max_concurrency}")
-    failures = list(input_failures)
-    counts = Counter()
-    success = 0
-    done = 0
+    for path in (config.output, config.bad_output):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if config.resume:
+        Path(config.output).touch(exist_ok=True)
+        Path(config.bad_output).touch(exist_ok=True)
+    else:
+        Path(config.output).write_text("", encoding="utf-8")
+        Path(config.bad_output).write_text("", encoding="utf-8")
+    for failure in input_failures:
+        append_jsonl(config.bad_output, failure)
+    total = len(pending)
+    logger.info(f"[续跑跳过={skipped} 输入淘汰={len(input_failures)} 本轮待处理={total} 并发={config.max_concurrency}]")
+    success = discarded = 0
+    counts = Counter(failure.get("stage", "unknown") for failure in input_failures)
+    completed = 0
+    started = time.monotonic()
     with InterruptibleThreadPoolExecutor(max_workers=config.max_concurrency) as pool:
         futures = {pool.submit(generate_environment, item, config): item for item in pending}
         for future in as_completed(futures):
@@ -35,23 +48,21 @@ def run(config):
             try:
                 result = future.result()
             except Exception as exc:
-                result = {"scenario": item["scenario"], "task_id": item["task_id"], "task": item["task"], "stage": "exception", "reason": f"{type(exc).__name__}: {exc}"}
+                logger.exception(f"{item['scenario']}/{item['task_id']}: 未预期异常")
+                result = {**{key: item[key] for key in ("scenario", "task_id", "task")}, "stage": "exception", "reason": f"{type(exc).__name__}: {exc}"}
+            completed += 1
             if result.get("stage"):
-                failures.append(result)
+                append_jsonl(config.bad_output, result)
+                discarded += 1
                 counts[result["stage"]] += 1
-                logger.warning(f"[淘汰] {item['scenario']}/{item['task_id']} {result['stage']}: {result.get('reason')}")
+                logger.warning(f"[{completed}/{total} 淘汰] {item['scenario']}/{item['task_id']} {result['stage']}: {result.get('reason')}")
             else:
-                completed[task_key(result)] = result
+                append_jsonl(config.output, result)
                 success += 1
-                logger.success(f"[通过] {item['scenario']}/{item['task_id']} fixes={result.get('fix_count', 0)}")
-            write_jsonl(config.output, completed.values())
-            write_jsonl(config.bad_output, failures)
-            # 每个 future 恰好对应一个 pending 任务，直接累加即可；
-            # 旧写法每次完成都对全部 failures×pending 重建集合，3011 个任务时是 O(n²)。
-            done += 1
-            logger.info(f"[进度 {done}/{len(pending)}] 通过={success} 淘汰={done-success} 剩余={len(pending)-done}")
-    logger.info(f"[完成] 通过={success} 淘汰={len(pending)-success} 原因={dict(counts)} 输出={config.output}")
-    return {"success": success, "failed": len(pending)-success}
+                logger.success(f"[{completed}/{total} 通过] {item['scenario']}/{item['task_id']} fixes={result.get('fix_count', 0)}")
+    summary = ", ".join(f"{stage}={count}" for stage, count in sorted(counts.items())) or "无"
+    logger.info(f"[完成] 本轮通过={success}/{total} 本轮淘汰={discarded} 明细={summary} 耗时={time.monotonic()-started:.1f}s 输出={config.output}")
+    return {"success": success, "discarded": discarded, "input_errors": len(input_failures)}
 
 
 def main():

@@ -5,9 +5,7 @@
   → 不合格则 fixer 带「上一轮任务 + 失败原因」定向修复（方案 B）。
 
 运行方式（在项目根目录 ma_upgrade/ 下）：
-  python -m stages.task.generate \
-      --input_scenario output/scenario/gen_scenario_ma.jsonl \
-      --input_angles output/angle/gen_angles_ma.jsonl
+  python -m stages.task.generate
 """
 
 import json
@@ -21,6 +19,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+_DEFAULT_INPUT_SENARIO = str(_PROJECT_ROOT / "output" / "scenario" / "gen_scenario_ma.jsonl")
 _DEFAULT_OUTPUT = str(_PROJECT_ROOT / "output" / "task" / "gen_tasks_ma.jsonl")
 _DEFAULT_ANGLES = str(_PROJECT_ROOT / "output" / "angle" / "gen_angles_ma.jsonl")
 
@@ -44,7 +43,7 @@ from tqdm import tqdm
 @dataclass
 class Config:
     """任务生成的配置项。"""
-    input_scenario: str                         # 场景文件（gen_scenario_ma.jsonl）
+    input_scenario: str = _DEFAULT_INPUT_SENARIO                       # 场景文件（gen_scenario_ma.jsonl）
     input_angles: str = _DEFAULT_ANGLES         # 角度文件（gen_angles_ma.jsonl）
     output: str = _DEFAULT_OUTPUT               # 输出文件（默认绝对路径）
     num_tasks: int =  10                        # 每个场景要保留的合格任务数，这个参数实际不起作用了，因为我们不需要截断到10，合格的任务都可以保留下来

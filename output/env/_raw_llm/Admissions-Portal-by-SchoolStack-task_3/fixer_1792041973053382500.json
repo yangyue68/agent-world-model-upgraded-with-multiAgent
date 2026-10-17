@@ -1,9 +1,0 @@
-{
-  "agent": "fixer",
-  "label": "Admissions Portal by SchoolStack/task_3",
-  "model": "Qwen3-Coder-30B-A3B-Instruct",
-  "max_tokens": 50000,
-  "chars": 3113,
-  "completion_tokens": 736,
-  "finish_reason": "stop"
-}

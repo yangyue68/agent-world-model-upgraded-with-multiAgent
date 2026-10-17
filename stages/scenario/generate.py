@@ -15,9 +15,7 @@
       → 合格加入池子
 
 运行方式（在项目根目录 ma_upgrade/ 下）：
-  python -m stages.scenario.generate \
-      --input_path stages/scenario/seed_scenario.jsonl \
-      --target_count 150
+  python -m stages.scenario.generate --target_count 150
 """
 
 # ---- 标准库 ----
@@ -38,6 +36,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 # 默认输出文件用「绝对路径」，与 CWD 无关
+_DEFAULT_INPUT = str(_PROJECT_ROOT / "stages" / "scenario" / "seed_scenario.jsonl")
 _DEFAULT_OUTPUT = str(_PROJECT_ROOT / "output" / "scenario" / "gen_scenario_ma.jsonl")
 
 # ---- 复用原版 awm 的组件 ----
@@ -68,7 +67,7 @@ from stages.scenario.validators import (   # 确定性规则校验
 @dataclass
 class Config:
     """场景生成的配置项（对应原 scenario.py 的 Config）。"""
-    input_path: str                             # 种子场景文件（seed_scenario.jsonl）
+    input_path: str = _DEFAULT_INPUT                       # 种子场景文件（seed_scenario.jsonl）
     output_path: str = _DEFAULT_OUTPUT          # 输出文件（默认绝对路径）
     target_count: int = 500                    # 目标场景总数
     num_parallel_requests: int = 2              # 每轮并行请求数

@@ -496,7 +496,7 @@ vllm serve /root/autodl-tmp/ms-cache/models/Qwen3-Coder-30B-A3B-Instruct \
 
 ```
 $env:AWM_SYN_LLM_PROVIDER="openai"
-$env:OPENAI_BASE_URL="https://uu808973-x055-cb19614f.westd.seetacloud.com:8443/v1"
+$env:OPENAI_BASE_URL="https://uu808973-y6ap-e4ed3635.westd.seetacloud.com:8443/v1"
 $env:OPENAI_API_KEY="EMPTY"              # vLLM 不校验 key，给个非空值即可
 $env:AWM_SYN_OVERRIDE_MODEL="Qwen3-Coder-30B-A3B-Instruct"
 ```

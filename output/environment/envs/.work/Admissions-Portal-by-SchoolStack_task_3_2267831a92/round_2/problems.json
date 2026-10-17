@@ -1,5 +1,0 @@
-[
-  "Incorrect join condition in the main query: The join between ReviewAssignment and subquery uses User.id == subquery.c.reviewer_id, but the subquery's reviewer_id column is not properly aliased or referenced, causing incorrect data grouping.",
-  "Missing proper filtering for final_decision values: The case statement should explicitly check for NULL values in final_decision to avoid counting them as decided applications when they shouldn't be counted.",
-  "Incorrect group by clause: The GROUP BY clause includes ReviewCommittee.id which is not selected in the SELECT, violating SQL standards and potentially causing incorrect aggregation results."
-]

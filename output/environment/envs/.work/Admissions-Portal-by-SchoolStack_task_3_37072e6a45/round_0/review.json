@@ -1,7 +1,0 @@
-{
-  "verdict": "environment_bug",
-  "issues": [
-    "The query incorrectly filters applications using a subquery that references ProgramTerm.id but doesn't properly join with the applications table. The condition Application.program_term_id.in_(program_term_subq) should be applied after joining with the program_terms table to ensure correct filtering.",
-    "In the SELECT clause, the grouping includes ReviewCommittee.name but it's not selected in the projection, which can cause issues with some SQL engines when using GROUP BY without including all non-aggregated columns in the SELECT list."
-  ]
-}

@@ -1,7 +1,0 @@
-[
-  "/applications/{application_number}: operationId 应为 get_application_details",
-  "/applications/{application_number}/withdraw: operationId 应为 withdraw_application",
-  "/applications/{application_number}/notes: operationId 应为 add_application_note",
-  "/applications/{application_number}/emails/log: operationId 应为 log_withdrawal_email",
-  "/applicants/{applicant_id}: operationId 应为 get_applicant_details"
-]

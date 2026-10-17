@@ -2,7 +2,9 @@
 from pathlib import Path
 import hashlib
 import json
-import os
+
+from loguru import logger
+from lib.single_file_env import ENV_VERSION
 
 
 def read_jsonl(path):
@@ -18,19 +20,29 @@ def read_jsonl(path):
     return records
 
 
-def write_jsonl(path, records):
-    # 先写临时文件再原子替换，防止进程被中断时留下半截 JSONL。
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.parent / f"{target.name}.tmp.{os.getpid()}"
-    try:
-        with tmp.open("w", encoding="utf-8") as handle:
-            for record in records:
-                handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-        os.replace(tmp, target)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+def append_jsonl(path, record):
+    """逐行追加持久化，与 specific 阶段一致：续跑不清空、每条结果即时落盘。"""
+    with Path(path).open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
+def resume_keys(path, root):
+    """可续跑跳过的 (scenario, task_id) 集合。损坏行、非当前版本、产物目录缺失的记录只警告并视为未完成。"""
+    if not Path(path).exists():
+        return set()
+    valid = set()
+    for row in read_jsonl(path):
+        if not row.get("env_dir") or not row.get("traj_dir"):
+            continue
+        key = task_key(row)
+        if row.get("env_version") != ENV_VERSION:
+            logger.warning(f"[续跑] {key} 产物版本 {row.get('env_version')} 非 {ENV_VERSION}，重跑")
+            continue
+        if not (Path(root) / row["env_dir"] / "main.py").is_file() or not (Path(root) / row["traj_dir"] / "traj.json").is_file():
+            logger.warning(f"[续跑] {key} 的 envs/trajectory 目录缺失，重跑")
+            continue
+        valid.add(key)
+    return valid
 
 
 def task_key(record):

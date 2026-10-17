@@ -1,5 +1,0 @@
-[
-  "Incorrect join condition in the main query: The join between User and subquery uses User.id == subquery.c.reviewer_id, but the subquery's reviewer_id column is not properly aliased or selected in the correct context, potentially causing incorrect aggregation or missing data.",
-  "Missing proper grouping in the main query: The GROUP BY clause should include ReviewCommittee.id to ensure correct grouping by committee, which is necessary for accurate aggregation when multiple committees exist.",
-  "Potential division by zero in percentage calculation: Although handled with a conditional check, the code does not explicitly handle cases where total_assigned_applications could be zero due to improper filtering or join logic, leading to potential runtime errors."
-]

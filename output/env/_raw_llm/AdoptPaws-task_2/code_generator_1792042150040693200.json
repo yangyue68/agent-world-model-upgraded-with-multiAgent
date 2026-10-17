@@ -1,9 +1,0 @@
-{
-  "agent": "code_generator",
-  "label": "AdoptPaws/task_2",
-  "model": "Qwen3-Coder-30B-A3B-Instruct",
-  "max_tokens": 50000,
-  "chars": 13403,
-  "completion_tokens": 3383,
-  "finish_reason": "stop"
-}

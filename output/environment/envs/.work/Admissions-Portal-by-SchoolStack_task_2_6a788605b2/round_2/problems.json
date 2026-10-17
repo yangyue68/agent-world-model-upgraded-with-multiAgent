@@ -1,4 +1,0 @@
-[
-  "The database schema defines a check constraint on the 'intakes' table using sqltext=, but the implementation uses text() function incorrectly in the CheckConstraint definition. The correct syntax should be CheckConstraint('term IN ('Fall', 'Spring', 'Summer', 'Winter')', name='check_term'), etc.",
-  "In the filter_applicants endpoint, the join with Interview table is not properly constrained to ensure that only applicants with at least one scheduled interview are returned. The current implementation may include applicants who have interviews but not necessarily scheduled ones."
-]

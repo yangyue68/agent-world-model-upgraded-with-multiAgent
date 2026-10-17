@@ -4,7 +4,7 @@
   Planner(规划角度) → 角度语义评审(逐条) → 合格角度不足则带「上一轮角度 + 失败原因」重规划（方案 A）。
 
 运行方式（在项目根目录 ma_upgrade/ 下）：
-  python -m stages.angle.generate --input output/scenario/gen_scenario_ma.jsonl
+  python -m stages.angle.generate
 """
 
 import json
@@ -21,7 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 # 默认输出文件用「绝对路径」，与 CWD 无关
 _DEFAULT_OUTPUT = str(_PROJECT_ROOT / "output" / "angle" / "gen_angles_ma.jsonl")
-
+_DEFAULT_INPUT = str(_PROJECT_ROOT / "output" / "scenario"/"gen_scenario_ma.jsonl")
 from loguru import logger
 
 from lib.interrupt import run_cli, check_cancelled
@@ -41,7 +41,7 @@ NUM_ANGLES = 5   # 每个场景固定保留的合格角度数
 @dataclass
 class Config:
     """角度生成的配置项。"""
-    input: str                                # 场景文件（gen_scenario_ma.jsonl）
+    input: str  = _DEFAULT_INPUT                              # 场景文件（gen_scenario_ma.jsonl）
     output: str = _DEFAULT_OUTPUT             # 角度文件（默认绝对路径）
     num_angles: int = NUM_ANGLES              # 每个场景要保留的合格角度数
     shuffle: bool = False                     # 是否打乱场景顺序

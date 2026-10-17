@@ -1,7 +1,0 @@
-[
-  "/programs/lookup: operationId must be lookup_programs",
-  "/programs/{program_id}/recommendation-requirements: operationId must be create_recommendation_requirement",
-  "/programs/{program_id}/deadline-rules: operationId must be create_deadline_rule",
-  "/programs/{program_id}/reminder-schedules: operationId must be create_reminder_schedule",
-  "environment changed the database during startup"
-]

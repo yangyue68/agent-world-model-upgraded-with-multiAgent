@@ -1,7 +1,0 @@
-[
-  "/programs/lookup: operationId 应为 lookup_programs",
-  "/programs/{program_id}/recommendation-requirements: operationId 应为 create_recommendation_requirement",
-  "/programs/{program_id}/deadline-rules: operationId 应为 create_deadline_rule",
-  "/programs/{program_id}/reminder-schedules: operationId 应为 create_reminder_schedule",
-  "环境在导入/启动时修改了数据库数据"
-]

@@ -1,3 +1,0 @@
-[
-  "File \"E:\\论文阅读合集\\agent-world-model-main\\agent-world-model-main\\ma_upgrade\\output\\environment\\envs\\.work\\AdoptPaws_task_2_2aa048e93d\\round_0\\main.py\", line 111, in get_rabies_gap_report: AttributeError: 'str' object has no attribute 'query'"
-]

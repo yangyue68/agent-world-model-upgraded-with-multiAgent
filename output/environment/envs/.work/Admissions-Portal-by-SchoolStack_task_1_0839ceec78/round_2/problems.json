@@ -1,4 +1,0 @@
-[
-  "Incorrect filtering logic for missing document type. The current implementation uses a nested subquery that doesn't properly exclude applicants who have the specified document type. It should use a LEFT JOIN with IS NULL check or NOT EXISTS instead.",
-  "The query structure doesn't correctly handle the requirement to find applicants who do NOT have a specific document type. The current approach creates an unnecessarily complex nested subquery that may miss applicants or include incorrect results."
-]

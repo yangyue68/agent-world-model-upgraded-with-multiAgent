@@ -1,6 +1,0 @@
-{
-  "verdict": "environment_bug",
-  "issues": [
-    "The SQL query uses NOT EXISTS with a subquery that incorrectly references Document.applicant_id = Applicant.id. The correct join condition should be Document.applicant_id = Applicant.id, but the current implementation may not properly correlate the subquery with the outer query's Applicant table reference, leading to incorrect filtering results."
-  ]
-}

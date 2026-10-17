@@ -1,5 +1,0 @@
-[
-  "create_application_form: required parameter name missing",
-  "create_application_form: required parameter application_fee_cents missing",
-  "create_application_form: required parameter sections missing"
-]

@@ -1,8 +1,0 @@
-{
-  "scenario": "Admissions Portal by SchoolStack",
-  "task_id": "task_5",
-  "task": "For the existing 'Fall 2025 Undergraduate Admissions' form, add a new optional section called 'Extracurricular Activities' that allows up to 5 entries, each with activity name, role, hours per week, and description; add a required document called 'Financial Aid Statement' that appears only when the applicant answers 'Yes' to the question 'Are you applying for need-based aid?'; and update the regular decision deadline to January 5, 2025 while keeping the early action deadline at November 1, 2024.",
-  "stage": "probe_incomplete",
-  "reason": "没有足够的实际工具调用证据；不归因于环境代码，也不标记通过",
-  "diagnostics_dir": "output/environment/envs/.work/Admissions-Portal-by-SchoolStack_task_5_5898c80d95fd"
-}

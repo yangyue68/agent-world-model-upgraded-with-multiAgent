@@ -1,2 +1,0 @@
-E:\论文阅读合集\agent-world-model-main\agent-world-model-main\ma_upgrade\output\environment\_codex_retry34_v2\envs\.work\Admissions-Portal-by-SchoolStack_task_3_f0f24be15e\round_2\main.py:82: SAWarning: Can't validate argument 'check_constraint'; can't locate any SQLAlchemy dialect named 'check'
-  final_decision = Column(Text, check_constraint=text("final_decision IN ('admit', 'waitlist', 'deny')"))

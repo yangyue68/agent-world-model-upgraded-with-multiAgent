@@ -1,14 +1,13 @@
 """One task: generate -> deterministic checks -> review -> rollout -> repair."""
 import json
-import shutil
-import uuid
+import tempfile
 from pathlib import Path
 from loguru import logger
 from lib.db_diff import snapshot_db, diff_snapshots
 from lib.interrupt import check_cancelled
 from lib.single_file_env import ENV_VERSION
 from lib.tools import safe_dir_name
-from .artifacts import cleanup, publish, save_json
+from .artifacts import publish, save_json
 from .llm import build_agents, extract_code, parse_review, request, ReplyError
 from .runner import run_probe, validate_candidate
 from .storage import portable
@@ -22,10 +21,15 @@ def _payload(item):
 
 
 def generate_environment(item, config):
+    # 产物目录名用“场景+任务”确定性命名，跨运行稳定、不带 uuid/时间戳；重跑同一任务直接覆盖旧目录。
     label = f"{item['scenario']}/{item['task_id']}"
-    stamp = f"{safe_dir_name(item['scenario'])[:60]}_{item['task_id']}_{uuid.uuid4().hex[:10]}"
-    work = Path(config.envs_dir) / ".work" / stamp
-    work.mkdir(parents=True, exist_ok=True)
+    name = f"{safe_dir_name(item['scenario'])[:60]}_{item['task_id']}"
+    # 中间工作区放系统临时目录，通过/淘汰/异常退出时一律自动删除，output/environment 不再产生 .work。
+    with tempfile.TemporaryDirectory(prefix="awm-env-") as tmpdir:
+        return _generate(item, config, label, name, Path(tmpdir))
+
+
+def _generate(item, config, label, name, work):
     agents = build_agents(config, label, work / "_raw_llm")
     base = {key: item[key] for key in ("scenario", "task_id", "task")}
     context = _payload(item)
@@ -43,7 +47,7 @@ def generate_environment(item, config):
                 review = request(agents["reviewer"], review_input, parse_review, config.request_retry)
                 save_json(round_dir / "review.json", review)
                 if review["verdict"] == "upstream_conflict":
-                    return {**base, "stage": "upstream_conflict", "reason": "; ".join(review["issues"]), "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+                    return {**base, "stage": "upstream_conflict", "reason": "; ".join(review["issues"])}
                 if review["verdict"] == "environment_bug":
                     problems = review["issues"]
             accepted = []
@@ -82,7 +86,7 @@ def generate_environment(item, config):
                             trajectory["environment_review"] = error_review
                             save_json(run_dir / "traj.json", trajectory)
                             if error_review["verdict"] == "upstream_conflict":
-                                return {**base, "stage": "upstream_conflict", "reason": "; ".join(error_review["issues"]), "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+                                return {**base, "stage": "upstream_conflict", "reason": "; ".join(error_review["issues"])}
                             if error_review["verdict"] == "environment_bug":
                                 problems = error_review["issues"] or trajectory["error_scan"]["environment_errors"]
                                 break
@@ -91,7 +95,7 @@ def generate_environment(item, config):
                         if not calls or trajectory.get("total_calls", 0) == 0:
                             if attempt < config.max_probe_retry:
                                 continue
-                            return {**base, "stage": "probe_incomplete", "reason": "rollout 没有产生有效业务工具调用", "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+                            return {**base, "stage": "probe_incomplete", "reason": "rollout 没有产生有效业务工具调用"}
                         review_input = json.dumps({"input": json.loads(context), "current_main_py": code,
                                                    "trajectory": trajectory_evidence(trajectory),
                                                    "initial_snapshot": compact(initial), "diff": compact(trajectory["database_diff"])}, ensure_ascii=False, default=str)
@@ -99,7 +103,7 @@ def generate_environment(item, config):
                         trajectory["environment_review"] = tr_review
                         save_json(run_dir / "traj.json", trajectory)
                         if tr_review["verdict"] == "upstream_conflict":
-                            return {**base, "stage": "upstream_conflict", "reason": "; ".join(tr_review["issues"]), "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+                            return {**base, "stage": "upstream_conflict", "reason": "; ".join(tr_review["issues"])}
                         if tr_review["verdict"] == "environment_bug":
                             problems = tr_review["issues"]
                             break
@@ -108,8 +112,7 @@ def generate_environment(item, config):
                     if problems:
                         break
             if not problems:
-                env_dir, traj_dir = publish(round_dir, accepted, config, stamp)
-                cleanup(work)
+                env_dir, traj_dir = publish(round_dir, accepted, config, name)
                 return {**base, "env_version": ENV_VERSION, "input_fingerprint": item["input_fingerprint"],
                         "code_fingerprint": __import__("hashlib").sha256(code.encode()).hexdigest(),
                         "db_path": portable(item["db_path"], Path(config.envs_dir).parents[2]),
@@ -120,7 +123,7 @@ def generate_environment(item, config):
                 code = normalize_code(repaired_code, item.get("api_spec"))
                 continue
             if repair_no >= config.max_fix_retry:
-                return {**base, "stage": "environment_bug", "reason": "; ".join(map(str, problems)), "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+                return {**base, "stage": "environment_bug", "reason": "; ".join(map(str, problems))}
             fixer_input = json.dumps({"input": json.loads(context), "current_main_py": code,
                                       "problems": summarize_problems(problems),
                                       "instruction": "Fix each distinct root cause shown by the final exception or validation message. Return a complete corrected main.py."}, ensure_ascii=False, default=str)
@@ -130,10 +133,9 @@ def generate_environment(item, config):
                 # fixer 在确定性采样下返回了与提交版完全相同的源码，说明该问题无法靠修复解决；
                 # 提前止损，避免像 task_5/task_6 那样把整个修复预算烧在逐字节重复的输出上。
                 return {**base, "stage": "environment_bug",
-                        "reason": "fixer returned unchanged code: " + "; ".join(map(str, summarize_problems(problems))),
-                        "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+                        "reason": "fixer returned unchanged code: " + "; ".join(map(str, summarize_problems(problems)))}
     except ReplyError as exc:
-        return {**base, "stage": "model_request", "reason": str(exc), "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+        return {**base, "stage": "model_request", "reason": str(exc)}
     except Exception as exc:
         logger.exception(f"[{label}] environment pipeline failed")
-        return {**base, "stage": "runtime", "reason": f"{type(exc).__name__}: {exc}", "diagnostics_dir": portable(work, Path(config.envs_dir).parents[2])}
+        return {**base, "stage": "runtime", "reason": f"{type(exc).__name__}: {exc}"}

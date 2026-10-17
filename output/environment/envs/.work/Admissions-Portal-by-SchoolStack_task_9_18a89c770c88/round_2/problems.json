@@ -1,5 +1,0 @@
-[
-  "/applicants/lookup: operationId 应为 lookup_applicants_by_name_and_program",
-  "lookup_applicants_by_name_and_program.response 缺少类型声明",
-  "/applicants/{primary_id}/merge/{duplicate_id}: operationId 应为 merge_duplicate_applicants"
-]

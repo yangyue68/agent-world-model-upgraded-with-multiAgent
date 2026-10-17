@@ -1,4 +1,0 @@
-[
-  "The database schema defines a CheckConstraint using `check=` instead of `sqltext=` as required by the task specification. Specifically, the constraint 'chk_applicant_status_valid' in the Applicant table uses `check=` which is invalid according to the specification.",
-  "The database schema defines a CheckConstraint using `check=` instead of `sqltext=` as required by the task specification. Specifically, the constraint 'chk_document_type_valid' in the Document table uses `check=` which is invalid according to the specification."
-]

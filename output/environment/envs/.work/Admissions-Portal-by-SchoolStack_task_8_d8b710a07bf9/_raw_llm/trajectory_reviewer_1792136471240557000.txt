@@ -1,7 +1,0 @@
-{
-  "verdict": "environment_bug",
-  "issues": [
-    "No MCP tools are available in the environment to perform the required actions for withdrawing an applicant's application, updating status, adding notes, sending emails, or managing files."
-  ],
-  "reason": "The environment lacks available MCP tools necessary to execute the task. The trajectory shows the agent repeatedly attempts to list tools but receives no tools in the catalogue, preventing any action on the application. This is an environment configuration issue rather than an agent error, as the agent correctly identifies the lack of tools and cannot proceed with the withdrawal process."
-}

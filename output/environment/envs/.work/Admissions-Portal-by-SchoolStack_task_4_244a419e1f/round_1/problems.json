@@ -1,5 +1,0 @@
-[
-  "/application-forms: operationId must be create_application_form",
-  "create_application_form.sections[].fields[].field_type: enum must include ['text', 'email', 'date', 'number', 'textarea', 'file', 'recommendation_request']",
-  "create_application_form.requirements[].requirement_type: enum must include ['document_upload', 'recommendation_request']"
-]
