@@ -210,7 +210,7 @@ python -m stages.rl.train_grpo \
 |---|---|
 | 基础模型 | **Qwen3-4B**（原论文 Arctic-AWM-4B 的基础模型就是 `Qwen/Qwen3-4B`） |
 | RL 算法 | **GRPO**（组内相对 reward，不需要 reward model） |
-| reward | **database diff + LLM judge**（`gen_verifier_ma.jsonl`，确定性 complete/others） |
+| reward | **当前 rollout 的 database diff + LLM judge**（RL 在线计算；verifier 输出只用于离线任务筛选） |
 | 工具协议 | **XML 协议**（`<tool_call>`，复用 `awm/core/agent.py`） |
 | 框架 | **自写轻量循环**（可读、可控，便于讲解） |
 

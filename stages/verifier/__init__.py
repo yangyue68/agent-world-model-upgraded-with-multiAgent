@@ -1,1 +1,1 @@
-"""调用 LLM judge 评判 env 阶段已有 rollout，并按任务完成情况分组。"""
+"""基于 environment 单条 rollout 生成 judge 结果与 RL 任务名单。"""
