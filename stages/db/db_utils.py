@@ -13,7 +13,7 @@ from lib.gpt import GPTClient   # 项目自己封装好的"调用大模型"的�
 from stages.db.prompts import DATABASE_GENERATION_SYSTEM_PROMPT, DATABASE_GENERATION_USER_PROMPT  # 预先写好的提示词模板
 from loguru import logger      # 日志工具，用来打印带颜色、分级别的运行信息
 from dataclasses import dataclass  # 让"配置类"写起来更简洁
-from lib.tools import tools_jsonl_save, tools_jsonl_load, tools_robust_json_loads, normalize_scenario_name, tools_token_count  # 项目自带的实用小工具
+from lib.tools import tools_jsonl_save, tools_jsonl_load, tools_robust_json_loads, normalize_scenario_name, tools_token_count, portable_project_path  # 项目自带的实用小工具
 
 @dataclass
 class Config:
@@ -244,7 +244,7 @@ def generate_all_databases(args: Config):
                     db_path, successful, failed, error_msg = create_sqlite_database(
                         scenario_name, db_schema, args.database_dir
                     )
-                    db_data['db_path'] = db_path  # 填上数据库路径
+                    db_data['db_path'] = portable_project_path(db_path)  # 产物里一律写相对路径，跨机器可迁移
                     
                     total_tables = successful + failed  # 总表数 = 成功 + 失败
                     if total_tables > 0:
@@ -277,7 +277,7 @@ def generate_all_databases(args: Config):
             failed_result = {
                 "scenario": scenario_name,
                 "db_schema": db_schema,
-                "db_path": f"{args.database_dir}/{normalize_scenario_name(scenario_name)}.db"
+                "db_path": portable_project_path(f"{args.database_dir}/{normalize_scenario_name(scenario_name)}.db")
             }
             history_data_messages[temp].append((error_ratio, failed_result))  # 记录这次尝试的失败率和结果
             

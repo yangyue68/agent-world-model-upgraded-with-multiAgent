@@ -8,6 +8,7 @@ from contextlib import closing
 import os
 from pathlib import Path
 import queue
+import re
 import sqlite3
 import subprocess
 import sys
@@ -16,17 +17,49 @@ import time
 
 from lib.interrupt import check_cancelled, managed_popen, release_process
 from lib.environment_context import CURRENT_USER_ID
+from lib.tools import resolve_project_path
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_VERSION = "single-file-v1"
 
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
+
+
+def _safe_resolve(raw, root=ROOT) -> Path:
+    """把产物里的路径解析成本机可用的绝对路径，并拦住跨平台污染。
+
+    直接 ``Path(raw).resolve()`` 对 ``E:\\...\\X.db`` 这种 Windows 路径是灾难：
+    Linux 上 ``os.path.isabs`` 判它为相对路径，``resolve()`` 会拼上 CWD，产出
+    ``/root/autodl-tmp/<repo>/E:/.../X.db`` —— 一个永远不存在的垃圾路径，而且
+    报错信息完全看不出是路径污染（RL rollout 曾因此整批 FileNotFoundError）。
+
+    这里统一走 resolve_project_path 按项目锚点重定位。注意**不在这里抛错**：
+    Windows 本机开发时产物里出现盘符路径是合法的，且 env_dir 是目录、
+    存在性判定方式与 .db 文件不同。污染诊断交给 describe_missing_path()。
+    """
+    return Path(resolve_project_path(str(raw).strip(), root)).resolve()
+
+
+def describe_missing_path(raw, resolved) -> str:
+    """为「解析后仍然找不到」的路径生成诊断信息，区分普通缺失与跨平台污染。"""
+    text = str(raw).strip()
+    if _WINDOWS_DRIVE_RE.match(text):
+        return (
+            f"{resolved}（产物里存的是 Windows 绝对路径 {text!r}，跨平台拷贝后失效）。"
+            f"请运行 python -m ma_upgrade.scripts.normalize_artifact_paths 把产物路径改回相对路径。"
+        )
+    return f"{resolved}（产物里的原始路径：{text!r}）"
+
 
 def copy_database(source, target):
-    source, target = Path(source).resolve(), Path(target).resolve()
+    # source 来自上游产物（db_path 字段），必须做跨平台防御；
+    # target 由本模块用 output_dir 拼出，不可能被产物污染，直接 resolve。
+    raw_source = source
+    source, target = _safe_resolve(source), Path(target).resolve()
     if source == target:
         raise ValueError("初始库与工作库不能相同")
     if not source.is_file():
-        raise FileNotFoundError(source)
+        raise FileNotFoundError("初始数据库不存在：" + describe_missing_path(raw_source, source))
     target.parent.mkdir(parents=True, exist_ok=True)
     # backup 同时包含 WAL 中已经提交的数据。
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
@@ -37,7 +70,8 @@ def copy_database(source, target):
 class SingleFileEnv:
     def __init__(self, scenario, env_dir, output_dir, initial_db_source, timeout=60):
         self.scenario = scenario
-        self.env_dir = str(Path(env_dir).resolve())
+        # env_dir 同样来自产物（gen_envs_ma.jsonl 的 env_dir 字段），走同一套防御。
+        self.env_dir = str(_safe_resolve(env_dir))
         self.output_dir = str(Path(output_dir).resolve())
         self.initial_db_source = initial_db_source
         self.initial_db_path = str(Path(self.output_dir) / "initial.db")

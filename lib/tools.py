@@ -35,6 +35,8 @@ except ImportError:
 
 
 _WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+# 仅匹配盘符本身（不要求后面跟分隔符），用于剥离 "E:" 这类跨平台残留前缀。
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 
 def _portable_parts(value: str) -> tuple[str, ...]:
@@ -43,14 +45,46 @@ def _portable_parts(value: str) -> tuple[str, ...]:
     return tuple(part for part in PurePosixPath(normalized).parts if part not in ("/", ""))
 
 
-def resolve_project_path(raw, project_root=None) -> Path:
-    """Resolve paths from artifacts copied between Windows and Linux.
+def _last_index(haystack: list[str], needle: str) -> int:
+    return len(haystack) - 1 - haystack[::-1].index(needle)
 
-    ``os.path.isabs('E:\\...')`` is false on Linux.  Older JSONL artifacts
-    therefore used to become ``<linux-root>/E:\\...`` when consumed on the
-    server.  If a path contains the current project marker, map everything
-    after that marker into the current checkout. Existing native absolute
-    paths are kept intact so external resources remain usable.
+
+def _anchor_suffix(parts: tuple[str, ...], root: Path) -> tuple[str, ...] | None:
+    """返回项目锚点起算的相对片段；找不到任何锚点时返回 None。
+
+    两类锚点，切片方式不同：
+      - 项目根目录名（root.name，或历史部署用的 "ma_upgrade"）：相对片段从
+        **锚点的下一段**开始，因为锚点本身就对应 root。取最后一次出现，
+        避免路径中间偶然重名的目录把后缀切错。
+      - "output"：产物里的相对路径一律以 output/ 开头，所以相对片段要
+        **包含 output 本身**。取第一次出现（最接近根的那个）。
+        老版本 _PROJECT_ROOT 曾上溯到 ma_upgrade 的上级，那批产物的路径里
+        不含 "ma_upgrade" 段，只有这个锚点能救回来。
+    """
+    lowered = [part.casefold() for part in parts]
+    for anchor in (root.name.casefold(), "ma_upgrade"):
+        if anchor and anchor in lowered:
+            return parts[_last_index(lowered, anchor) + 1:]
+    if "output" in lowered:
+        return parts[lowered.index("output"):]
+    return None
+
+
+def resolve_project_path(raw, project_root=None) -> Path:
+    """把产物里的路径解析成当前 checkout 下的可用路径。
+
+    历史产物在 Windows / Linux 之间来回拷贝，留下三类脏数据：
+      1. 相对路径（期望形态）        output/db/databases/X.db
+      2. Windows 绝对路径            E:\\...\\ma_upgrade\\output\\db\\...\\X.db
+      3. 别的机器的 POSIX 绝对路径    /root/autodl-tmp/.../ma_upgrade/output/...
+
+    ``os.path.isabs('E:\\\\...')`` 在 Linux 上是 False，所以第 2 类会被
+    ``os.path.join`` / ``Path.resolve()`` 当成相对路径拼到 CWD 上，产出
+    ``/root/autodl-tmp/<repo>/E:/...`` 这种永远不存在的垃圾路径（RL 阶段
+    copy_database 正是这么炸的）。这里统一按锚点重定位到当前 root。
+
+    不含任何项目锚点的原生绝对路径（如模型权重 /data/models/Qwen3-4B）原样
+    保留，避免外部资源被错误挂进项目目录。
     """
     root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
     if raw is None:
@@ -64,30 +98,47 @@ def resolve_project_path(raw, project_root=None) -> Path:
         return candidate.resolve()
 
     parts = _portable_parts(normalized)
-    marker = root.name.casefold()
-    marker_indexes = [index for index, part in enumerate(parts) if part.casefold() == marker]
-    if marker_indexes:
-        suffix = parts[marker_indexes[-1] + 1:]
+    suffix = _anchor_suffix(parts, root)
+    if suffix is not None:
         return (root.joinpath(*suffix) if suffix else root).resolve()
 
-    if _WINDOWS_ABS_RE.match(text):
-        # Preserve an unrelated missing Windows path for a useful error.
-        return Path(normalized)
-    if candidate.is_absolute():
-        return candidate.resolve()
-    if parts and parts[0].casefold() == marker:
+    if _WINDOWS_DRIVE_RE.match(text):
+        # 跨平台污染的 Windows 路径：剥掉盘符后挂到当前 root。绝不原样返回，
+        # 否则下游 Path.resolve() 会用 CWD 拼出 /root/.../E:/... 垃圾路径。
         parts = parts[1:]
-    return root.joinpath(*parts).resolve()
+        return root.joinpath(*parts).resolve() if parts else root
+    if candidate.is_absolute() or normalized.startswith("/"):
+        # 无锚点的 POSIX 绝对路径：视为本机原生资源（模型权重、缓存目录等），
+        # 保持原样。注意 Windows 上 Path("/data/x").is_absolute() 是 False
+        # （没有盘符），所以还要额外认 "/" 前缀，否则这类路径会被错误地挂进
+        # 项目根目录，变成 <root>/data/models/Qwen3-4B。
+        return candidate.resolve()
+    if parts and parts[0].casefold() == root.name.casefold():
+        parts = parts[1:]
+    return root.joinpath(*parts).resolve() if parts else root
 
 
 def portable_project_path(raw, project_root=None) -> str:
-    """Serialize a project path as a POSIX relative path when possible."""
+    """把项目产物路径序列化成 POSIX 相对路径；**永不返回绝对路径**。
+
+    产物（JSONL/JSON）会被拷到别的机器上消费，写绝对路径等于埋雷。
+    仅用于项目内产物路径，不要用它序列化模型权重等外部资源。
+    """
     root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
     value = resolve_project_path(raw, root)
     try:
         return value.relative_to(root).as_posix()
     except ValueError:
-        return value.as_posix()
+        pass
+    # relative_to 失败 = value 不在 root 下（锚点缺失或跨盘符）。
+    # 兜底用锚点切片强制相对化，绝不把绝对路径写进产物。
+    parts = _portable_parts(value)
+    suffix = _anchor_suffix(parts, root)
+    if suffix is not None:
+        return PurePosixPath(*suffix).as_posix() if suffix else "."
+    if _WINDOWS_DRIVE_RE.match(str(value)):
+        parts = parts[1:]
+    return PurePosixPath(*parts).as_posix() if parts else "."
 
 
 def dump_sqlite_to_string(db_path: str) -> str:

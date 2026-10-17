@@ -15,8 +15,12 @@ import sys      # 把项目根目录加进 sys.path
 from dataclasses import dataclass   # 用数据类定义配置项
 from pathlib import Path            # 处理文件路径
 
-# 确保项目根目录在 sys.path 上，便于 import awm / ma_upgrade
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent   # 上溯四级到项目根目录
+# 确保 ma_upgrade 在 sys.path 上，便于 import lib / stages 等包内模块。
+# 注意：变量名叫 _PROJECT_ROOT，但它指向的是 **ma_upgrade 目录本身**
+# （db → stages → ma_upgrade，上溯三级），不是 ma_upgrade 的上级部署根目录。
+# 产物里的相对路径一律以 ma_upgrade 为基准、从 output/ 开始，正是靠这一点保证；
+# 若改成上溯四级，portable_project_path 会产出 "ma_upgrade/output/..." 而破坏约定。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -30,7 +34,9 @@ from loguru import logger   # 日志工具
 from lib.interrupt import run_cli, check_cancelled
 from lib.interrupt import InterruptibleThreadPoolExecutor as ThreadPoolExecutor, as_completed
 from stages.db.db_utils import create_sqlite_database   # 复用原项目的建库函数（真正执行 DDL）
-from lib.tools import tools_jsonl_load, tools_jsonl_save, tools_robust_json_loads, normalize_scenario_name, safe_dir_name
+from lib.tools import (tools_jsonl_load, tools_jsonl_save, tools_robust_json_loads,
+                       normalize_scenario_name, safe_dir_name,
+                       portable_project_path, resolve_project_path)
 
 from lib.orchestrator import Agent   # 通用 agent 原语
 from stages.db.prompts import (   # 本阶段的提示词
@@ -60,6 +66,9 @@ class Config:
 
     def pre_process(self):
         """开工前检查：补齐默认值、校验输入、解析模型名。"""
+        # 路径统一解析：命令行可能传相对路径，输入产物可能带别的机器的绝对路径。
+        for name in ("input", "output", "bad_output", "database_dir"):
+            setattr(self, name, str(resolve_project_path(getattr(self, name), _PROJECT_ROOT)))
         if self.limit is None:
             self.limit = int(1e18)
         assert self.input and os.path.exists(self.input), "input is required"
@@ -187,7 +196,10 @@ def generate_db_for_task(task_item: dict, config: Config):
         db_filename = f"{safe_scenario}_{task_id}.db"
         db_path, success, failed_count, errors = create_sqlite_database(scenario_name, db_schema, config.database_dir, db_filename)
         if failed_count == 0:                # 全部建表成功 → 返回
-            db_path = os.path.relpath(db_path, _PROJECT_ROOT).replace(os.sep, "/")   # 相对路径（用 / 分隔，跨平台），便于迁移
+            # 产物里的路径一律写相对路径。不用 os.path.relpath：它在 Windows 上
+            # 遇到跨盘符（db 在 D:、_PROJECT_ROOT 在 E:）会直接抛 ValueError，
+            # 而且不会把历史遗留的绝对路径规范化。
+            db_path = portable_project_path(db_path, _PROJECT_ROOT)
             return {"scenario": scenario_name, "task_id": task_id, "task": task, "db_schema": db_schema, "db_path": db_path}
 
         # ④ 建库报错 → 交给 fixer（下一轮修复）

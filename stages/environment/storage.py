@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from loguru import logger
-from lib.single_file_env import ENV_VERSION
+from lib.single_file_env import ENV_VERSION, describe_missing_path
 from lib.tools import portable_project_path, resolve_project_path
 
 
@@ -52,8 +52,13 @@ def task_key(record):
     return str(record.get("scenario", "")), str(record.get("task_id", ""))
 
 
-def fingerprint(record):
+def fingerprint(record, root=None):
     payload = {key: record.get(key) for key in ("scenario", "task_id", "task", "api_spec", "db_schema", "db_path")}
+    if root is not None and payload.get("db_path"):
+        # 指纹必须跨机器稳定。record["db_path"] 在内存里是绝对路径（runner 要用它
+        # 打开 .db 文件），直接进指纹会让同一份数据在 Windows / Linux 上算出不同
+        # 结果，产物拷过去就被误判成「输入变了」。这里统一按相对路径参与哈希。
+        payload["db_path"] = portable_project_path(payload["db_path"], root)
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
@@ -85,10 +90,14 @@ def merge_inputs(config):
                 "db_path": db["db_path"], "initial_snapshot": sample.get("initial_snapshot", {}),
                 "initial_snapshot_len": sample.get("initial_snapshot_len")}
         project_root = Path(config.input_db).resolve().parents[2]
-        item["db_path"] = str(resolve_project_path(item["db_path"], project_root))
-        if not Path(item["db_path"]).is_file():
-            failures.append({"scenario": key[0], "task_id": key[1], "stage": "input", "reason": f"数据库不存在: {item['db_path']}"})
+        # 内存里保留绝对路径：runner.py 要拿它直接开 .db 文件；
+        # 落盘由 pipeline.py 的 portable() 转相对，两边职责不要混。
+        db_abs = resolve_project_path(item["db_path"], project_root)
+        if not db_abs.is_file():
+            failures.append({"scenario": key[0], "task_id": key[1], "stage": "input",
+                             "reason": f"数据库不存在: {describe_missing_path(item['db_path'], db_abs)}"})
             continue
-        item["input_fingerprint"] = fingerprint(item)
+        item["db_path"] = str(db_abs)
+        item["input_fingerprint"] = fingerprint(item, project_root)
         items.append(item)
     return items, failures

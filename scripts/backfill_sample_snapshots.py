@@ -33,7 +33,7 @@ for _p in (str(_MA_ROOT), str(_PROJECT_ROOT)):
         sys.path.insert(0, _p)
 
 from lib.db_diff import snapshot_db, snapshot_size  # noqa: E402
-from lib.tools import safe_dir_name  # noqa: E402
+from lib.tools import resolve_project_path, safe_dir_name  # noqa: E402
 
 
 DEFAULT_SAMPLE = _MA_ROOT / "output" / "sample" / "gen_sample_ma.jsonl"
@@ -51,8 +51,11 @@ def resolve_db_path(rec, db_dir, project_root):
     raw = rec.get("db_path") or ""
     candidates = []
     if raw:
-        candidates.append(raw if os.path.isabs(raw) else os.path.join(str(project_root), raw))
-        candidates.append(raw if os.path.isabs(raw) else os.path.join(str(_MA_ROOT), raw))
+        # 不能用 os.path.isabs：Windows 盘符路径（E:\...）在 Linux 上会被判成
+        # 「相对路径」，os.path.join 之后得到 <root>/E:/... 这种永远不存在的
+        # 垃圾路径。统一交给 resolve_project_path 按项目锚点重定位。
+        candidates.append(str(resolve_project_path(raw, project_root)))
+        candidates.append(str(resolve_project_path(raw, _MA_ROOT)))
     candidates.append(
         os.path.join(db_dir, "%s_%s.db" % (safe_dir_name(rec.get("scenario", "")), rec.get("task_id", "")))
     )
