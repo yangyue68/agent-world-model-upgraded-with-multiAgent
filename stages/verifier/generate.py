@@ -69,7 +69,7 @@ class Config:
     evidence_dir: str = str(_OUTPUT_DIR / "judge_evidence")
     model: str = "your-llm-model-name"
     provider: str = "azure"
-    max_concurrency: int = 5
+    max_concurrency: int = 12
     max_retry: int = 2
     request_timeout: float = 600.0
     max_tokens: int = 4096
@@ -318,6 +318,61 @@ def _base_result(item: dict, task: str | None, config: Config) -> dict:
     }
 
 
+def _load_cached_result(item: dict, sample: dict, config: Config) -> dict | None:
+    """预先检查并加载证据指纹匹配的 judge 结果。
+
+    断点续传不能只看 ``judge_result.json`` 是否存在，因为 environment
+    轨迹、数据库快照、judge 模型或提示词任何一个发生变化，都必须重新
+    请求 judge。这里复用和 `_judge_task` 完全相同的证据构造与指纹算法，
+    让主流程在提交线程池之前就能区分缓存命中和真正待处理的任务。
+    """
+    if not config.resume:
+        return None
+    input_path, result_path = _evidence_paths(config, item)
+    if not result_path.is_file():
+        return None
+    try:
+        payload, _metadata = _prepare_evidence(item, sample)
+        fingerprint = _fingerprint(config, payload)
+        cached = json.loads(result_path.read_text(encoding="utf-8"))
+    except (EvidenceError, OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(cached, dict) or cached.get("mode") != _MODE:
+        return None
+
+    exact_match = (
+        cached.get("input_hash") == fingerprint
+        and cached.get("classification") in _JUDGE_CLASSES
+    )
+    # 与 specific/environment 的任务级续跑保持一致：如果材料本身没有
+    # 变化，只是 judge 提示词或请求参数升级，不重复请求同一任务。旧版
+    # evidence 的 input_hash 可能包含旧提示词，因此回读 judge_input.json
+    # 做材料级校验，并把缓存迁移到当前指纹。
+    legacy_match = False
+    if not exact_match and cached.get("classification") in _JUDGE_CLASSES and input_path.is_file():
+        try:
+            saved_payload = json.loads(input_path.read_text(encoding="utf-8"))
+            legacy_match = _json_text(saved_payload) == _json_text(payload)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            legacy_match = False
+    if not (exact_match or legacy_match):
+        return None
+
+    if legacy_match and cached.get("input_hash") != fingerprint:
+        cached["input_hash"] = fingerprint
+        _write_json(result_path, cached)
+    if not (
+        isinstance(cached, dict)
+        and cached.get("classification") in _JUDGE_CLASSES
+    ):
+        return None
+    cached = dict(cached)
+    cached["cached"] = True
+    cached.setdefault("judge_input_path", _portable_path(input_path))
+    cached.setdefault("judge_result_path", _portable_path(result_path))
+    return cached
+
+
 def _judge_task(item: dict, sample: dict, config: Config) -> dict:
     env_task = item["env"].get("task")
     task = env_task if isinstance(env_task, str) and env_task.strip() else sample.get("task")
@@ -453,13 +508,21 @@ def run(config: Config) -> list[dict]:
             if _key(row) in selected_keys
         }
 
-    # 每次重新构造证据并核对任务指纹，避免 environment 产物更新后沿用旧判定。
-    # 指纹匹配时 _judge_task 会复用缓存，不会再次请求 LLM。
+    # 启动时先构造证据并核对指纹。命中缓存的任务直接放入 results，
+    # 只有真正没有缓存或指纹变化的任务才进入线程池；这样进度从缓存
+    # 命中数开始，且不会用空 results 覆盖已有清单。
     results: dict[tuple[str, str], dict] = {}
     if config.resume and Path(config.evidence_dir).exists():
         logger.info("断点续传已启用：将校验每个任务的证据指纹，缓存命中时跳过模型请求")
+        for item in selected:
+            cached = _load_cached_result(item, samples.get(item["key"], {}), config)
+            if cached is not None:
+                results[item["key"]] = cached
+        if results:
+            logger.info(f"断点缓存命中：{len(results)}/{len(selected)} 个任务，将跳过对应 judge 请求")
+
+    pending = [item for item in selected if item["key"] not in results]
     _flush_outputs(config, results)
-    pending = selected
     if not pending:
         counts = Counter(row.get("status") for row in results.values())
         logger.info(f"无需请求 judge：完成={counts['completed']}，未完成={counts['not_completed']}，坏任务={counts['bad']}")
@@ -467,7 +530,10 @@ def run(config: Config) -> list[dict]:
 
     counters = Counter(row.get("status") for row in results.values())
     completed_count = len(results)
-    logger.info(f"开始 verifier：待处理 {len(pending)} 个任务，模型={config.model}")
+    logger.info(
+        f"开始 verifier：待处理 {len(pending)} 个任务，已恢复 {completed_count} 个任务，"
+        f"模型={config.model}"
+    )
     try:
         with ThreadPoolExecutor(max_workers=min(config.max_concurrency, len(pending))) as pool:
             futures = {

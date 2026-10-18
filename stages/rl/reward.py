@@ -71,13 +71,18 @@ def compute_reward(initial_db_path: str, final_db_path: str,
 
     order_ok = (tool_call_names is None) or check_tool_order(tool_call_names)
     if classification == "complete":
-        return ("complete" if order_ok else "ordered"), None
+        # Keep the judge evidence.  The downstream continuous reward uses
+        # completion_score/confidence_score to distinguish fully completed
+        # rollouts instead of assigning every ``complete`` rollout the same
+        # fallback score.
+        return ("complete" if order_ok else "ordered"), judge_result
     if classification == "server_error":
         return "env_error", "LLM judge classified the rollout as a server/environment error"
     if classification == "agent_error":
-        return "others", None
+        return "agent_error", judge_result
     if classification == "incomplete":
-        # Preserve a small learning signal for useful, correctly ordered
-        # tool work even when the agent stopped before a complete answer.
-        return ("partial" if order_ok else "others"), None
-    return "others", None
+        # Keep partial progress even when the protocol order was imperfect;
+        # protocol quality is reflected in the continuous reward instead of
+        # discarding all useful tool work.
+        return "partial", judge_result
+    return "others", judge_result

@@ -45,6 +45,7 @@ Key considerations:
 Output format (must be valid JSON, no markdown fences, no additional commentary):
 {
   "reasoning": "<concise explanation considering the trajectory, initial snapshot, and exact diff>",
+  "completion_score": <integer from 0 to 100 estimating how much of the task was completed>,
   "confidence_score": [0-100, 0-100, 0-100, 0-100] for complete, incomplete, server_error, agent_error respectively,
   "classification": "<one_of_[complete, incomplete, server_error, agent_error]>",
   "evidence": {
@@ -142,6 +143,14 @@ def llm_judge(client, model, task, trajectory, database_state, *, max_tokens=409
 
     if not isinstance(result, dict):
         return "judge_error", {"error": f"LLM response is not a dict: {content[:200]}"}
+
+    # 旧版 judge 可能没有 completion_score；缺失时由分类置信度回退，保持兼容。
+    score = result.get("completion_score")
+    if score is not None:
+        try:
+            result["completion_score"] = max(0, min(100, int(float(score))))
+        except (TypeError, ValueError):
+            result.pop("completion_score", None)
 
     classification = str(result.get("classification", "")).lower().strip()
     if classification not in {"complete", "incomplete", "server_error", "agent_error"}:

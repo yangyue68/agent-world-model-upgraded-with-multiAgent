@@ -36,7 +36,7 @@ class Config:
     max_steps: int = 15
     temperature: float = 1.0
     learning_rate: float = 1e-3
-    max_new_tokens: int = 10000
+    max_new_tokens: int = 30000
     max_tokens_per_batch: int = 80000
     # 被训练 policy 是否启用 Qwen3 thinking；默认关闭以减少 rollout 成本。
     enable_thinking: bool = False

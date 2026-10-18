@@ -1,4 +1,3 @@
-{"classification":"server_error","error":"judge 判定为服务端错误","scenario":"AssetPulse","stage":"environment","task_id":7,"task_key":"task_8","trajectory_path":"output/environment/trajectory/AssetPulse_task_8/traj.json"}
 {"classification":"server_error","error":"judge 判定为服务端错误","scenario":"AssetPulse","stage":"environment","task_id":9,"task_key":"task_10","trajectory_path":"output/environment/trajectory/AssetPulse_task_10/traj.json"}
+{"classification":"server_error","error":"judge 判定为服务端错误","scenario":"AutoBridge Dealer","stage":"environment","task_id":1,"task_key":"task_2","trajectory_path":"output/environment/trajectory/AutoBridge-Dealer_task_2/traj.json"}
 {"classification":"server_error","error":"judge 判定为服务端错误","scenario":"AutoBridge Dealer","stage":"environment","task_id":4,"task_key":"task_5","trajectory_path":"output/environment/trajectory/AutoBridge-Dealer_task_5/traj.json"}
-{"classification":"server_error","error":"judge 判定为服务端错误","scenario":"BrightPath Financial Wellness","stage":"environment","task_id":17,"task_key":"task_18","trajectory_path":"output/environment/trajectory/BrightPath-Financial-Wellness_task_18/traj.json"}

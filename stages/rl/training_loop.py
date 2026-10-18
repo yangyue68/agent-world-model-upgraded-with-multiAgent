@@ -16,25 +16,37 @@ from stages.rl.rollout_runner import collect_rollouts
 
 def train(config):
     check_cancelled()
+
+    #训练前的准备工作
     state = prepare_training(config)
+
+    #开始num_epochs轮训练
     for epoch in range(config.num_epochs):
         logger.info(f"===== Epoch {epoch + 1}/{config.num_epochs}（共 {len(state.train_items)} 个 task）=====")
+
+        #遍历每一个训练样本
         for index, item in enumerate(state.train_items):
             check_cancelled()
             if (item.scenario, item.task_id) in state.bad_tasks:
                 continue
+
+            #每隔checkpoint_every个样本保存一次lora权重
             if config.checkpoint_every and index > 0 and index % config.checkpoint_every == 0:
                 save_checkpoint(state.model, state.tokenizer, config.output_dir, index)
+
             logger.info(
                 f"===== [Epoch {epoch + 1}/{config.num_epochs}] task {index + 1}/{len(state.train_items)}："
                 f"{item.scenario} task_{item.task_id} 开始 rollout（group_size={config.group_size}）====="
             )
+
+            #收集轨迹期间，关闭梯度检查点
             state.model.gradient_checkpointing_disable()
             started = time.time()
-            results = collect_rollouts(state, item)
+            results = collect_rollouts(state, item)#收集轨迹
             logger.info(f"[{item.scenario} task_{item.task_id}] rollout 完成，耗时 {time.time() - started:.1f}s，得到 {len(results)} 条轨迹")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+
             trajectories, rewards = process_results(state, item, results, epoch)
             state.model.gradient_checkpointing_enable()
             if len(rewards) < 2:
