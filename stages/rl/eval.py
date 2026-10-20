@@ -16,6 +16,7 @@ import sys
 import threading
 # time：坏任务清单时间戳
 import time
+from datetime import datetime
 # dataclass：声明配置类
 from dataclasses import dataclass
 # Path：定位项目根目录
@@ -59,6 +60,7 @@ class Config:
     sample_path: str = str(_MA_ROOT / "output" / "sample" / "gen_sample_ma.jsonl")   # 样本数据
     verifier_path: str = str(_MA_ROOT / "output" / "verifier" / "gen_verifier_ma.jsonl")  # 兼容旧命令；评估不读取 verifier 代码
     output_dir: str = str(_MA_ROOT / "stages" / "rl" / "output_eval")        # 评估产物目录
+    eval_output_name: str | None = None  # 评估汇总文件名；默认按模型名和时间戳生成
     max_steps: int = 10                # 每条 rollout 最大步数
     temperature: float = 1.0           # 采样温度
     max_new_tokens: int = 512          # 单次生成最大 token
@@ -109,7 +111,63 @@ def _append_bad_task(path: str, scenario: str, task_id: int, reason: str, type_:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def _build_eval_output_path(config, timestamp: datetime) -> Path:
+    output_dir = _MA_ROOT / "stages" / "rl" / "output" / "eval_output"
+    if config.eval_output_name:
+        filename = config.eval_output_name
+        if not filename.endswith(".jsonl"):
+            filename += ".jsonl"
+        if Path(filename).name != filename:
+            raise ValueError("eval_output_name 只能是文件名，不能包含目录")
+    else:
+        model_name = os.path.basename(os.path.normpath(config.model_name))
+        model_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in model_name)
+        filename = f"eval_output_{model_name}_{timestamp:%Y%m%d_%H%M%S}.jsonl"
+    return output_dir / filename
+
+
+def _write_eval_summary(config, eval_items, completed_task_keys, total_rollouts,
+                        completed_rollouts, bad_task_keys, bad_task_events,
+                        started_at: datetime, model_path: str) -> Path:
+    finished_at = datetime.now().astimezone()
+    total_tasks = len(eval_items)
+    completed_tasks = len(completed_task_keys)
+    record = {
+        "evaluated_model": config.model_name,
+        "resolved_model_path": model_path,
+        "data_source": config.allowed_tasks_path or config.tasks_path,
+        "tasks_path": config.tasks_path,
+        "allowed_tasks_path": config.allowed_tasks_path,
+        "total_tasks": total_tasks,
+        "completed_tasks": completed_tasks,
+        "start_task": config.start_task,
+        "end_task": config.end_task,
+        "task_completion_rate": completed_tasks / total_tasks if total_tasks else 0.0,
+        "bad_task_count": len(bad_task_keys),
+        "bad_tasks": [
+            {"scenario": scenario, "task_id": task_id}
+            for scenario, task_id in sorted(bad_task_keys)
+        ],
+        "bad_task_event_count": bad_task_events,
+        "total_rollouts": total_rollouts,
+        "completed_rollouts": completed_rollouts,
+        "rollout_completion_rate": completed_rollouts / total_rollouts if total_rollouts else 0.0,
+        "num_samples": config.num_samples,
+        "num_workers": config.num_workers,
+        "max_steps": config.max_steps,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "duration_seconds": round((finished_at - started_at).total_seconds(), 3),
+    }
+    output_path = _build_eval_output_path(config, finished_at)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return output_path
+
+
 def evaluate(config: Config):
+    started_at = datetime.now().astimezone()
     # 延迟导入 transformers
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -235,6 +293,16 @@ def evaluate(config: Config):
 
     # 坏任务清单：eval 阶段遇到 env 5xx / env 启动失败 / judge_error 时记录到这里（供后续针对性修复）
     bad_tasks_path = _build_bad_tasks_path(config)  # bad_tasks_{start}_{end}_in_{数据源}.jsonl
+    bad_task_keys = set()
+    bad_task_events = 0
+    bad_task_lock = threading.Lock()
+
+    def _record_bad_task(scenario, task_id, reason, type_, tool=None):
+        nonlocal bad_task_events
+        _append_bad_task(bad_tasks_path, scenario, task_id, reason, type_, tool=tool)
+        with bad_task_lock:
+            bad_task_keys.add((scenario, task_id))
+            bad_task_events += 1
 
     # ---- 跑评估（支持多线程并行，用 num_workers 控制并发数，受显存限制）----
     # 单条 rollout 的 worker：每个线程独立 tokenizer（避免并发访问 tokenizer 的问题），
@@ -257,7 +325,7 @@ def evaluate(config: Config):
                 env.start()
             except Exception as e:
                 # 启动失败或中断也必须进入外层 finally 清理。
-                _append_bad_task(bad_tasks_path, scenario, task_id, str(e), "env_start_error")
+                _record_bad_task(scenario, task_id, str(e), "env_start_error")
                 logger.warning(f"[eval] {scenario} task {task_id} 样本 {s} env 启动失败：{e}")
                 return 0
             traj = rollout(model, tk, task, env, config.max_steps, config.temperature,
@@ -269,7 +337,7 @@ def evaluate(config: Config):
                 err_details = traj.get("error_details", []) or []
                 tool = "|".join(list(dict.fromkeys(t for t, _ in err_details))) if err_details else None
                 reason = err_details[-1][1] if err_details else "env_5xx"
-                _append_bad_task(bad_tasks_path, scenario, task_id, reason, "env_5xx", tool=tool)
+                _record_bad_task(scenario, task_id, reason, "env_5xx", tool=tool)
 
             reward_type, judge_detail = compute_reward(
                 env.initial_db_path,
@@ -284,10 +352,10 @@ def evaluate(config: Config):
 
             # verifier 坏 → 记录 judge_error
             if reward_type == "judge_error":
-                _append_bad_task(bad_tasks_path, scenario, task_id, judge_detail or "judge_error", "judge_error")
+                _record_bad_task(scenario, task_id, judge_detail or "judge_error", "judge_error")
             # LLM 裁判判定环境错误 → 记录 env_error（同 env_5xx，不怪 agent）
             elif reward_type == "env_error":
-                _append_bad_task(bad_tasks_path, scenario, task_id, judge_detail or "env_error", "env_error")
+                _record_bad_task(scenario, task_id, judge_detail or "env_error", "env_error")
 
             return 1 if reward_type == "complete" else 0
         except Exception as e:
@@ -303,28 +371,42 @@ def evaluate(config: Config):
              for scenario, task_id, task, verifier in eval_items
              for s in range(config.num_samples)]
 
-    total, complete = 0, 0  # total=总样本数，complete=完成任务数
+    total, complete = 0, 0  # rollout 样本总数与完成数
+    completed_task_keys = set()
     if config.num_workers <= 1:
         # 串行（num_workers=1）
         for scenario, task_id, task, verifier, s in tasks:
-            complete += _run_one(scenario, task_id, task, verifier, s)
+            result = _run_one(scenario, task_id, task, verifier, s)
+            complete += result
+            if result:
+                completed_task_keys.add((scenario, task_id))
             total += 1
             logger.info(f"评估进度 {total}/{len(tasks)}，累计完成 {complete}")
     else:
         # 并行（num_workers>1）
         with ThreadPoolExecutor(max_workers=config.num_workers) as executor:
-            futures = [executor.submit(_run_one, scenario, task_id, task, verifier, s)
-                       for scenario, task_id, task, verifier, s in tasks]
+            futures = {
+                executor.submit(_run_one, scenario, task_id, task, verifier, s): (scenario, task_id)
+                for scenario, task_id, task, verifier, s in tasks
+            }
             for future in as_completed(futures):  # 哪个先完成先处理哪个
-                complete += future.result()
+                result = future.result()
+                complete += result
+                if result:
+                    completed_task_keys.add(futures[future])
                 total += 1
                 logger.info(f"评估进度 {total}/{len(tasks)}，累计完成 {complete}")
 
     # 算最终完成率
-    rate = complete / total if total else 0.0
+    rate = len(completed_task_keys) / len(eval_items) if eval_items else 0.0
     logger.success("=" * 60)
-    logger.success(f"任务完成率：{complete}/{total} = {rate:.2%}")
+    logger.success(f"任务完成率：{len(completed_task_keys)}/{len(eval_items)} = {rate:.2%}")
     logger.success("=" * 60)
+    summary_path = _write_eval_summary(
+        config, eval_items, completed_task_keys, total, complete,
+        bad_task_keys, bad_task_events, started_at, model_path,
+    )
+    logger.success(f"评估汇总已写入：{summary_path}")
 
 
 def main():

@@ -95,6 +95,7 @@ def _update_policy(state: TrainingState, steps, item, rewards):
         loss.backward()
         total_loss += loss.item()
     check_cancelled()
+    torch.nn.utils.clip_grad_norm_(state.model.parameters(), state.config.max_grad_norm)
     state.optimizer.step()
     logger.info(f"[{item.scenario} task_{item.task_id}] GRPO 更新完成，loss={total_loss:.4f}，耗时 {time.time() - started:.1f}s，rewards={rewards}")
 

@@ -1,0 +1,10 @@
+{
+  "eavl_model":"/root/autodl-tmp/agent-world-model-upgraded-with-multiAgent/stages/rl/output/checkpoint",
+  "data_source":"output/verifier/rl_ready_tasks.jsonl",
+  "total_task": 432,
+  "completed": 285,
+  "start_task":400,
+  "end_task": 616,
+  "completed_rate": 0.66,
+  "bad_task": 3
+}

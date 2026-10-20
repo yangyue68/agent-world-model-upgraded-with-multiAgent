@@ -16,6 +16,8 @@ from stages.rl.rollout import rollout_batch
 def collect_rollouts(state, item):
     """为一个 task 创建独立数据库，批量 rollout，并返回轨迹与 judge 结果。"""
     config = state.config
+
+    #每条轨迹单独一个隔离的数据库环境
     envs = []
     try:
         for group_index in range(config.group_size):
@@ -52,7 +54,7 @@ def collect_rollouts(state, item):
 
 def _start_env(state, item, run_dir: str, group_index: int):
     config = state.config
-    for attempt in range(config.env_start_retries):
+    for attempt in range(config.env_start_retries):#连续多次尝试启动环境，避免偶然失败
         check_cancelled()
         env = None
         started = False

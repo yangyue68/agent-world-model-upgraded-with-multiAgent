@@ -35,7 +35,7 @@ class Config:
     group_size: int = 10
     max_steps: int = 15
     temperature: float = 1.0
-    learning_rate: float = 1e-3
+    learning_rate: float = 1e-4
     max_new_tokens: int = 30000
     max_tokens_per_batch: int = 80000
     # 被训练 policy 是否启用 Qwen3 thinking；默认关闭以减少 rollout 成本。
@@ -44,6 +44,7 @@ class Config:
     env_start_retries: int = 3
     verbose: bool = False
     logsumexp_chunk_size: int = 150000
+    max_grad_norm: float = 1.0
 
     # ---- 数据范围 ----
     limit_scenarios: int | None = None

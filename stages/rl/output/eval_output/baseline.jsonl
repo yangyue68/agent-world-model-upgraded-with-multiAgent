@@ -1,0 +1,10 @@
+{
+  "eavl_model":"/root/autodl-tmp/ms-cache/models/Qwen3-4B-Instruct-2507",
+  "data_source":"output/verifier/rl_ready_tasks.jsonl",
+  "total_task": 432,
+  "completed": 136,
+  "start_task":400,
+  "end_task": 616,
+  "completed_rate": 0.31,
+  "bad_task": 2
+}
